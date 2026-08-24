@@ -1289,7 +1289,21 @@ window.registrarCorte = function(e, siembraId) {
 window.finalizarSiembra = function(id) {
     if(confirm('¿Estás seguro de finalizar esta siembra? Pasará al historial.')) {
         const today = new Date().toISOString().split('T')[0];
-        DB.update('siembras', id, { estado: 'FINALIZADA', fechaFinCosecha: today });
+        
+        const siembra = DB.get('siembras').find(s => s.id === id);
+        const lote = siembra ? DB.get('germinador').find(l => l.id === siembra.loteId) : null;
+        const producto = lote ? DB.get('productos').find(p => p.id === lote.productoId) : null;
+        const campo = siembra ? DB.get('campos').find(c => c.id === siembra.campoId) : null;
+        
+        const payload = { 
+            estado: 'FINALIZADA', 
+            fechaFinCosecha: today 
+        };
+        
+        if (producto) payload.nombreProductoHistorico = producto.nombre;
+        if (campo) payload.nombreCampoHistorico = campo.nombre;
+        
+        DB.update('siembras', id, payload);
         renderCosecha();
     }
 }
@@ -1728,8 +1742,8 @@ function renderDashboard() {
                 return `
                 <div class="card" style="border-left: 4px solid var(--primary-color)">
                     <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                        <strong>${prod.nombre}</strong>
-                        <span class="badge" style="background:#e0e0e0;">${campo.nombre}</span>
+                        <strong>${s.nombreProductoHistorico || prod.nombre}</strong>
+                        <span class="badge" style="background:#e0e0e0;">${s.nombreCampoHistorico || campo.nombre}</span>
                     </div>
                     <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">Siembra registrada por: ${s.autorEmail || 'Anónimo'}</p>
                     
