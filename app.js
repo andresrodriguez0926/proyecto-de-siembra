@@ -1591,7 +1591,7 @@ function renderDashboard() {
             }
             
             weeklyData.push({
-                name: `${campo.nombre} ${prod.nombre} T-${s.id.slice(-4)}`.toUpperCase(),
+                name: `${campo.nombre} ${prod.nombre}`.toUpperCase(),
                 weeks: rowWeeks,
                 total: totalYield
             });
