@@ -355,9 +355,15 @@ function renderConfiguracion() {
                         <input type="number" step="0.01" id="prod-yield" placeholder="Ej. 2.5" required>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>Proyección / Ventas Esperadas por Sem. (uds)</label>
-                    <input type="number" id="prod-sales" placeholder="Ej. 2000" required>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Factor Empaque (Uds por Canasta)</label>
+                        <input type="number" step="0.01" id="prod-pack" placeholder="Ej. 6" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Ventas por Semana (en canastas)</label>
+                        <input type="number" id="prod-sales" placeholder="Ej. 2000" required>
+                    </div>
                 </div>
                 <button type="submit" id="btn-submit-producto" class="btn-primary">Agregar Producto</button>
             </form>
@@ -432,6 +438,7 @@ function renderConfiguracion() {
             diasCosecha: parseInt(document.getElementById('prod-hdays').value),
             frecuenciaGerminacion: parseInt(document.getElementById('prod-freqdays').value) || 0,
             rendimientoPorPlanta: parseFloat(document.getElementById('prod-yield').value) || 1,
+            unidadesPorEmpaque: parseFloat(document.getElementById('prod-pack').value) || 1,
             ventasPorSemana: parseInt(document.getElementById('prod-sales').value) || 0
         };
         
@@ -499,6 +506,7 @@ window.editItem = function(type, id) {
         document.getElementById('prod-hdays').value = item.diasCosecha;
         document.getElementById('prod-freqdays').value = item.frecuenciaGerminacion || 0;
         document.getElementById('prod-yield').value = item.rendimientoPorPlanta || 1;
+        document.getElementById('prod-pack').value = item.unidadesPorEmpaque || 1;
         document.getElementById('prod-sales').value = item.ventasPorSemana || 0;
         editingId.productos = id;
         document.getElementById('btn-submit-producto').textContent = "Actualizar Producto";
@@ -525,7 +533,7 @@ function renderConfigLists() {
         <div class="list-item">
             <div class="list-info">
                 <p class="list-title">${p.nombre}</p>
-                <p class="list-subtitle">Germina: ${p.diasGerminacion}d | Cosecha: ${p.diasCosecha}d | Freq: ${p.frecuenciaGerminacion || 0}d | Rend: ${p.rendimientoPorPlanta || 1} | Ventas: ${p.ventasPorSemana || 0} /sem</p>
+                <p class="list-subtitle">Germina: ${p.diasGerminacion}d | Cosecha: ${p.diasCosecha}d | Freq: ${p.frecuenciaGerminacion || 0}d | Rend: ${p.rendimientoPorPlanta || 1} | Empaque: ${p.unidadesPorEmpaque || 1} | Ventas: ${p.ventasPorSemana || 0} /sem</p>
             </div>
             <div>
                 <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-right:4px;" onclick="editItem('productos', '${p.id}')">✏️</button>
@@ -1494,7 +1502,7 @@ function renderDashboard() {
                 const prod = productos.find(p => p.id === lote.productoId) || {nombre:'?', diasCosecha: 0, rendimientoPorPlanta: 1};
                 const campo = campos.find(c => c.id === s.campoId) || {nombre:'?'};
                 const sembradas = s.cantidad || 0;
-                const proyectada = (sembradas * (prod.rendimientoPorPlanta || 1)).toFixed(1);
+                const proyectada = (sembradas * (prod.rendimientoPorPlanta || 1) / (prod.unidadesPorEmpaque || 1)).toFixed(1);
                 
                 const fSiembra = new Date(s.fechaSiembra);
                 fSiembra.setDate(fSiembra.getDate() + (prod.diasCosecha || 0));
@@ -1547,7 +1555,7 @@ function renderDashboard() {
             if(!prod) return;
             const campo = campos.find(c => c.id === s.campoId) || {nombre:'?'};
             
-            let totalYield = (s.cantidad || 0) * (prod.rendimientoPorPlanta || 1);
+            let totalYield = ((s.cantidad || 0) * (prod.rendimientoPorPlanta || 1)) / (prod.unidadesPorEmpaque || 1);
             if (totalYield <= 0) return;
             
             let salesPerWeek = prod.ventasPorSemana || totalYield;
