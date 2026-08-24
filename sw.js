@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agroplan-v31';
+const CACHE_NAME = 'agroplan-v32';
 const urlsToCache = [
   './',
   './index.html',
