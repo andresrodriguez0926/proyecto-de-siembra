@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AgroPlan</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2e7d32">
+</head>
+<body>
+    <header id="main-header">
+        <h1 id="page-title">Dashboard</h1>
+    </header>
+
+    <main id="main-content">
+        <!-- Dashboard -->
+        <section id="view-dashboard" class="view active">
+            <div id="dashboard-container" class="padded-container"></div>
+        </section>
+
+        <!-- Germinador -->
+        <section id="view-germinador" class="view">
+            <div id="germinador-container" class="padded-container"></div>
+        </section>
+
+        <!-- Siembra -->
+        <section id="view-siembra" class="view">
+            <div id="siembra-container" class="padded-container"></div>
+        </section>
+
+        <!-- Cosecha -->
+        <section id="view-cosecha" class="view">
+            <div id="cosecha-container" class="padded-container"></div>
+        </section>
+
+        <!-- Configuración -->
+        <section id="view-configuracion" class="view">
+            <div id="configuracion-container" class="padded-container"></div>
+        </section>
+    </main>
+
+    <!-- Bottom Nav -->
+    <nav id="bottom-nav">
+        <button class="nav-btn active" data-target="view-dashboard" data-title="Dashboard">
+            <i class="material-icons">dashboard</i>
+            <span>Inicio</span>
+        </button>
+        <button class="nav-btn" data-target="view-germinador" data-title="Germinador">
+            <i class="material-icons">eco</i>
+            <span>Germinador</span>
+        </button>
+        <button class="nav-btn" data-target="view-siembra" data-title="Siembras">
+            <i class="material-icons">agriculture</i>
+            <span>Siembra</span>
+        </button>
+        <button class="nav-btn" data-target="view-cosecha" data-title="Cosechas">
+            <i class="material-icons">content_cut</i>
+            <span>Cosecha</span>
+        </button>
+        <button class="nav-btn" data-target="view-configuracion" data-title="Configuración">
+            <i class="material-icons">settings</i>
+            <span>Config</span>
+        </button>
+    </nav>
+
+    <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW registration failed:', err));
+        }
+    </script>
+</body>
+</html>
