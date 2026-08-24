@@ -1618,14 +1618,7 @@ function renderDashboard() {
                 </div>
                 <p class="list-subtitle no-print" style="margin-bottom:12px;">Distribución de la cosecha proyectada en base al promedio de ventas por semana configurado para cada producto.</p>
                 
-                <div class="form-group no-print" style="max-width: 300px; margin-bottom: 16px;">
-                    <label>Filtrar por producto</label>
-                    <select onchange="setFilterSemanales(this.value)">
-                        <option value="ALL">Todos los productos</option>
-                        ${productos.map(p => `<option value="${p.id}" ${viewFilters.semanales === p.id ? 'selected' : ''}>${p.nombre}</option>`).join('')}
-                    </select>
-                </div>
-                
+
                 <div class="no-print" style="margin-bottom: 24px; padding: 16px; background: #f9f9f9; border-radius: 8px; overflow-x: auto;">
                     <h4 style="text-align:center; margin-bottom: 16px; color: var(--primary-dark);">Volumen Total por Semana</h4>
                     <div style="display: flex; align-items: flex-end; justify-content: center; gap: 8px; height: 150px; border-bottom: 2px solid #ccc; padding-bottom: 4px; min-width: max-content;">
