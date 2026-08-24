@@ -268,10 +268,22 @@ button.btn-danger {
         print-color-adjust: exact !important;
     }
 
-    body.print-gantt #proyecciones-card {
+    body.print-gantt #proyecciones-card,
+    body.print-gantt #proyecciones-semanal-card,
+    body.print-gantt h3.no-print + #list-historial,
+    body.print-gantt h3.no-print {
         display: none !important;
     }
-    body.print-proyecciones #gantt-card {
+    body.print-proyecciones #gantt-card,
+    body.print-proyecciones #proyecciones-semanal-card,
+    body.print-proyecciones h3.no-print + #list-historial,
+    body.print-proyecciones h3.no-print {
+        display: none !important;
+    }
+    body.print-semanales #gantt-card,
+    body.print-semanales #proyecciones-card,
+    body.print-semanales h3.no-print + #list-historial,
+    body.print-semanales h3.no-print {
         display: none !important;
     }
     body.print-germinacion #germinador-container > .card:not(#reporte-germinacion-card),

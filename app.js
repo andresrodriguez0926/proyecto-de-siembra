@@ -5,9 +5,64 @@ window.editGerminador = function(id) {
     document.getElementById('germ-prod').value = item.productoId;
     document.getElementById('germ-qty').value = item.cantidad;
     document.getElementById('germ-date').value = item.fechaInicio;
+    document.getElementById('germ-notas').value = item.notas || '';
     editingId.germinador = id;
     document.getElementById('btn-submit-germinador').textContent = 'Actualizar Germinación';
     document.getElementById('form-germinador').scrollIntoView({ behavior: 'smooth' });
+};
+
+window.openNotaModal = function(coleccion, id) {
+    const record = DB.get(coleccion).find(x => x.id === id);
+    if (!record) return;
+
+    let modal = document.getElementById('nota-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'nota-modal';
+        modal.style.position = 'fixed';
+        modal.style.top = '0'; modal.style.left = '0'; modal.style.width = '100%'; modal.style.height = '100%';
+        modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        modal.style.display = 'flex'; modal.style.justifyContent = 'center'; modal.style.alignItems = 'center';
+        modal.style.zIndex = '9999';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div style="background:white; padding:24px; border-radius:8px; width:90%; max-width:400px; box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+            <h3 style="margin-top:0;">Agregar Nota / Evento</h3>
+            <p style="font-size:0.8rem; color:#666; margin-bottom:12px;">Se guardará la fecha automáticamente.</p>
+            <textarea id="nota-modal-text" rows="4" style="width:100%; padding:8px; box-sizing:border-box; border:1px solid #ccc; border-radius:4px;" placeholder="Ej: Fuerte lluvia, aplicación de fertilizante..."></textarea>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+                <button class="btn-secondary" onclick="document.getElementById('nota-modal').style.display='none'" style="padding:8px 16px; border:none; border-radius:4px; cursor:pointer; background:#e0e0e0; color:#333;">Cancelar</button>
+                <button class="btn-primary" onclick="guardarNotaModal('${coleccion}', '${id}')" style="padding:8px 16px; border:none; border-radius:4px; cursor:pointer; background:#2e7d32; color:white;">Guardar</button>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+    document.getElementById('nota-modal-text').focus();
+};
+
+window.guardarNotaModal = function(coleccion, id) {
+    const text = document.getElementById('nota-modal-text').value.trim();
+    if (!text) {
+        document.getElementById('nota-modal').style.display='none';
+        return;
+    }
+    
+    const record = DB.get(coleccion).find(x => x.id === id);
+    if (record) {
+        const dateStr = new Date().toISOString().split('T')[0];
+        const newNoteStr = `[${dateStr}] ${text}`;
+        const updatedNotas = record.notas ? record.notas + '\\n' + newNoteStr : newNoteStr;
+        DB.update(coleccion, id, { notas: updatedNotas });
+        
+        if (coleccion === 'germinador') renderGerminador();
+        else if (coleccion === 'siembras') {
+            if (record.estado === 'EN_COSECHA') renderCosecha();
+            else renderSiembra();
+        }
+    }
+    document.getElementById('nota-modal').style.display='none';
 };
 
 window.editSiembra = function(id) {
@@ -20,6 +75,7 @@ window.editSiembra = function(id) {
     setTimeout(() => {
         document.getElementById('siem-campo').value = item.campoId;
         document.getElementById('siem-date').value = item.fechaSiembra;
+        document.getElementById('siem-notas').value = item.notas || '';
         
         document.getElementById('siem-lotes-container').innerHTML = '';
         if (window.addLoteRow) {
@@ -89,6 +145,7 @@ window.editRegistroCosecha = function(id) {
             document.getElementById('corte-unit-' + siembraId).value = item.unidadId;
             document.getElementById('corte-price-' + siembraId).value = item.precio || 0;
             document.getElementById('corte-date-' + siembraId).value = item.fecha;
+            document.getElementById('corte-notas-' + siembraId).value = item.notas || '';
             editingId.cosecha = id;
             document.getElementById('btn-submit-corte-' + siembraId).textContent = 'Actualizar Corte';
             qtyInput.scrollIntoView({ behavior: 'smooth' });
@@ -198,17 +255,24 @@ function renderView(viewId) {
 // ==========================================
 // FILTROS GLOBALES
 // ==========================================
-let viewFilters = { germinador: 'ALL', siembra: 'ALL', cosecha: 'ALL', proyeccion: 'ALL' };
+let viewFilters = { germinador: 'ALL', siembra: 'ALL', cosecha: 'ALL', proyeccion: 'ALL', semanales: 'ALL' };
 let viewFiltersAlertas = 'ALL';
 window.setFiltroAlertas = function(val) { viewFiltersAlertas = val; renderAlertas(); };
 
 window.setFilter = function(view, value) {
     viewFilters[view] = value;
-    renderView('view-' + view);
+    if (view === 'germinador') renderGerminador();
+    if (view === 'siembra') renderSiembra();
+    if (view === 'cosecha') renderCosecha();
 };
 
 window.setFilterProyeccion = function(value) {
     viewFilters.proyeccion = value;
+    renderDashboard();
+};
+
+window.setFilterSemanales = function(value) {
+    viewFilters.semanales = value;
     renderDashboard();
 };
 
@@ -229,6 +293,10 @@ window.printReport = function(type) {
         document.body.classList.add('print-siembra');
         window.print();
         document.body.classList.remove('print-siembra');
+    } else if (type === 'semanales') {
+        document.body.classList.add('print-semanales');
+        window.print();
+        document.body.classList.remove('print-semanales');
     }
 }
 
@@ -283,9 +351,13 @@ function renderConfiguracion() {
                         <input type="number" id="prod-freqdays" placeholder="Ej. 15" required>
                     </div>
                     <div class="form-group">
-                        <label>Rendimiento por planta</label>
+                        <label>Rendimiento por planta (uds)</label>
                         <input type="number" step="0.01" id="prod-yield" placeholder="Ej. 2.5" required>
                     </div>
+                </div>
+                <div class="form-group">
+                    <label>Proyección / Ventas Esperadas por Sem. (uds)</label>
+                    <input type="number" id="prod-sales" placeholder="Ej. 2000" required>
                 </div>
                 <button type="submit" id="btn-submit-producto" class="btn-primary">Agregar Producto</button>
             </form>
@@ -359,7 +431,8 @@ function renderConfiguracion() {
             diasGerminacion: parseInt(document.getElementById('prod-gdays').value),
             diasCosecha: parseInt(document.getElementById('prod-hdays').value),
             frecuenciaGerminacion: parseInt(document.getElementById('prod-freqdays').value) || 0,
-            rendimientoPorPlanta: parseFloat(document.getElementById('prod-yield').value) || 1
+            rendimientoPorPlanta: parseFloat(document.getElementById('prod-yield').value) || 1,
+            ventasPorSemana: parseInt(document.getElementById('prod-sales').value) || 0
         };
         
         if (editingId.productos) {
@@ -426,6 +499,7 @@ window.editItem = function(type, id) {
         document.getElementById('prod-hdays').value = item.diasCosecha;
         document.getElementById('prod-freqdays').value = item.frecuenciaGerminacion || 0;
         document.getElementById('prod-yield').value = item.rendimientoPorPlanta || 1;
+        document.getElementById('prod-sales').value = item.ventasPorSemana || 0;
         editingId.productos = id;
         document.getElementById('btn-submit-producto').textContent = "Actualizar Producto";
         document.getElementById('form-producto').scrollIntoView({ behavior: 'smooth' });
@@ -451,7 +525,7 @@ function renderConfigLists() {
         <div class="list-item">
             <div class="list-info">
                 <p class="list-title">${p.nombre}</p>
-                <p class="list-subtitle">Germina: ${p.diasGerminacion}d | Cosecha: ${p.diasCosecha}d | Freq: ${p.frecuenciaGerminacion || 0}d | Rend: ${p.rendimientoPorPlanta || 1}</p>
+                <p class="list-subtitle">Germina: ${p.diasGerminacion}d | Cosecha: ${p.diasCosecha}d | Freq: ${p.frecuenciaGerminacion || 0}d | Rend: ${p.rendimientoPorPlanta || 1} | Ventas: ${p.ventasPorSemana || 0} /sem</p>
             </div>
             <div>
                 <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-right:4px;" onclick="editItem('productos', '${p.id}')">✏️</button>
@@ -543,6 +617,10 @@ function renderGerminador() {
                         <input type="date" id="germ-date" required value="${new Date().toISOString().split('T')[0]}">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label>Notas / Observaciones</label>
+                    <textarea id="germ-notas" rows="2" placeholder="Opcional. Ej: Detalles del lote, semillas, clima..."></textarea>
+                </div>
                 <button type="submit" class="btn-primary" id="btn-submit-germinador">Iniciar Germinación</button>
             </form>
         </div>
@@ -564,7 +642,11 @@ function renderGerminador() {
                 <div class="card" ${retrasado ? 'style="border: 2px solid #d32f2f;"' : ''}>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
                         <strong>${prod.nombre}</strong>
-                        <div><span class="badge ${l.estado === 'EN_GERMINACION' ? 'badge-warning' : 'badge-success'}">${l.estado.replace('_', ' ')}</span> <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;" onclick="editGerminador('${l.id}')">✏️</button></div>
+                        <div>
+                            <span class="badge ${l.estado === 'EN_GERMINACION' ? 'badge-warning' : 'badge-success'}">${l.estado.replace('_', ' ')}</span> 
+                            <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;" onclick="openNotaModal('germinador', '${l.id}')" title="Agregar Nota">📝</button>
+                            <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;" onclick="editGerminador('${l.id}')">✏️</button>
+                        </div>
                     </div>
                     <p class="list-subtitle">Inicio: ${l.fechaInicio}</p>
                     <p class="list-subtitle">Semillas iniciales: ${l.cantidad}</p>
@@ -572,6 +654,8 @@ function renderGerminador() {
                     ${l.estado === 'LISTO' ? `<p class="list-subtitle" style="color:var(--primary-color); font-weight:bold;">Disponibles para siembra: ${disponibles}</p>` : ''}
                     <p class="list-subtitle">Salida estimada: <strong>${l.fechaSalida}</strong></p>
                     
+                    ${l.notas ? `<div style="margin-top:8px; font-size:0.85rem; font-style:italic; color:#555; background:#f9f9f9; padding:6px; border-left:3px solid #ccc;"><strong>Notas e Historial:</strong><br/>${l.notas.replace(/\\n/g, '<br/>')}</div>` : ''}
+
                     ${retrasado ? `<div style="background-color: #ffebee; color: #c62828; padding: 8px; border-radius: 4px; margin-top: 12px; font-size: 0.9rem; font-weight: bold; text-align: center; border: 1px solid #ef9a9a;">¡RETRASO DE ${diasRetraso} DÍA(S) SIN SEMBRAR!</div>` : ''}
 
                     ${l.estado === 'EN_GERMINACION' ? `<button class="btn-primary" style="padding:8px; margin-top:8px; font-size:0.9rem;" onclick="marcarListo('${l.id}')">Marcar como Listo</button>` : ''}
@@ -649,12 +733,15 @@ function renderGerminador() {
         fechaObj.setDate(fechaObj.getDate() + prod.diasGerminacion);
         let fechaSalida = fechaObj.toISOString().split('T')[0];
 
+        const notas = document.getElementById('germ-notas').value || '';
+
         if (editingId.germinador) {
             DB.update('germinador', editingId.germinador, {
                 productoId: prodId,
                 cantidad: parseInt(document.getElementById('germ-qty').value),
                 fechaInicio: document.getElementById('germ-date').value,
-                fechaSalida: fechaSalida
+                fechaSalida: fechaSalida,
+                notas: notas
             });
             editingId.germinador = null;
         } else {
@@ -663,7 +750,8 @@ function renderGerminador() {
                 cantidad: parseInt(document.getElementById('germ-qty').value),
                 fechaInicio: document.getElementById('germ-date').value,
                 fechaSalida: fechaSalida,
-                estado: 'EN_GERMINACION'
+                estado: 'EN_GERMINACION',
+                notas: notas
             });
         }
         renderGerminador();
@@ -738,6 +826,11 @@ function renderSiembra() {
                 <div id="siem-lotes-container"></div>
                 <button type="button" id="btn-add-lote" class="btn-secondary" style="margin-bottom:16px; font-size:0.8rem; padding:4px 8px; background:#e0e0e0; color:#333; border:none; border-radius:4px; cursor:pointer;">+ Agregar otro lote</button>
 
+                <div class="form-group">
+                    <label>Notas / Observaciones</label>
+                    <textarea id="siem-notas" rows="2" placeholder="Opcional. Ej: Condiciones del suelo, plagas detectadas..."></textarea>
+                </div>
+
                 <br/>
                 <button type="submit" class="btn-primary" id="btn-submit-siembra">Registrar Siembra</button>
             </form>
@@ -769,6 +862,7 @@ function renderSiembra() {
                         <strong>${prod.nombre} - ${campo.nombre}</strong>
                         <div>
                             <span class="badge ${s.estado === 'CRECIENDO' ? 'badge-info' : 'badge-warning'}">${s.estado}</span> 
+                            <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;" onclick="openNotaModal('siembras', '${s.id}')" title="Agregar Nota">📝</button>
                             <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;" onclick="editSiembra('${s.id}')" title="Editar">✏️</button>
                             <button class="btn-danger" style="padding:4px 8px; font-size:0.8rem; margin-left:4px; background:#d32f2f; color:white; border:none; border-radius:4px; cursor:pointer;" onclick="anularSiembra('${s.id}')" title="Anular Siembra">🗑️</button>
                         </div>
@@ -784,6 +878,8 @@ function renderSiembra() {
                     ${s.retrasoDias < 0 ? `<p class="list-subtitle" style="color:var(--primary-color);"><strong>Trasplante anticipado:</strong> ${Math.abs(s.retrasoDias)} día(s)</p>` : ''}
                     ${s.retrasoDias === 0 ? `<p class="list-subtitle" style="color:var(--primary-color);"><strong>Trasplante a tiempo</strong></p>` : ''}
                     
+                    ${s.notas ? `<div style="margin-top:8px; font-size:0.85rem; font-style:italic; color:#555; background:#f9f9f9; padding:6px; border-left:3px solid #ccc;"><strong>Notas e Historial:</strong><br/>${s.notas.replace(/\\n/g, '<br/>')}</div>` : ''}
+
                     ${listaParaCosecha && s.estado === 'CRECIENDO' ? `<div style="background-color: #ffebee; color: #c62828; padding: 8px; border-radius: 4px; margin-top: 12px; font-size: 0.9rem; font-weight: bold; text-align: center; border: 1px solid #ef9a9a;">¡ATENCIÓN: TIEMPO DE COSECHA CUMPLIDO!</div>` : ''}
 
                     ${s.estado === 'CRECIENDO' ? `
@@ -911,6 +1007,7 @@ function renderSiembra() {
         
         const campoId = document.getElementById('siem-campo').value;
         const plantingDateStr = document.getElementById('siem-date').value;
+        const notas = document.getElementById('siem-notas').value || '';
         const rows = document.querySelectorAll('.siem-lote-row');
         
         let records = [];
@@ -961,7 +1058,8 @@ function renderSiembra() {
                     cantidad: qtyToPlant,
                     fechaSiembra: plantingDateStr,
                     fechaCosecha: fechaCosecha,
-                    retrasoDias: retrasoDias
+                    retrasoDias: retrasoDias,
+                    notas: notas
                 });
                 
                 let sembradasActuales = (lote.sembradas || 0) + qtyDiff;
@@ -978,7 +1076,8 @@ function renderSiembra() {
                     fechaSiembra: plantingDateStr,
                     fechaCosecha: fechaCosecha,
                     retrasoDias: retrasoDias,
-                    estado: 'CRECIENDO'
+                    estado: 'CRECIENDO',
+                    notas: notas
                 });
                 
                 let sembradasActuales = (lote.sembradas || 0) + qtyToPlant;
@@ -1062,9 +1161,14 @@ function renderCosecha() {
                         <h3 style="margin:0; border:none; padding:0;">${prod.nombre}</h3>
                         <p class="list-subtitle">${campo.nombre} &bull; <strong>${s.cantidad} plantas</strong></p>
                     </div>
-                    <button class="btn-danger" style="color:white; background:#d32f2f;" onclick="finalizarSiembra('${s.id}')">Finalizar</button>
+                    <div>
+                        <button class="btn-primary" style="padding:6px 12px; margin-right:8px;" onclick="openNotaModal('siembras', '${s.id}')" title="Agregar Nota">📝 Nota</button>
+                        <button class="btn-danger" style="color:white; background:#d32f2f;" onclick="finalizarSiembra('${s.id}')">Finalizar</button>
+                    </div>
                 </div>
                 
+                ${s.notas ? `<div style="margin-bottom:12px; font-size:0.85rem; font-style:italic; color:#555; background:#e3f2fd; padding:6px; border-left:3px solid #1565c0;"><strong>Notas e Historial:</strong><br/>${s.notas.replace(/\n/g, '<br/>')}</div>` : ''}
+
                 <div style="display:flex; gap:16px; margin-bottom:12px;">
                     <div>
                         <p class="list-subtitle">Recolectado (Ud. Base)</p>
@@ -1099,6 +1203,10 @@ function renderCosecha() {
                                 <input type="date" id="corte-date-${s.id}" required value="${new Date().toISOString().split('T')[0]}">
                             </div>
                         </div>
+                        <div class="form-group">
+                            <label>Notas / Observaciones</label>
+                            <textarea id="corte-notas-${s.id}" rows="2" placeholder="Opcional. Ej: Buena calidad, atacado por plaga..."></textarea>
+                        </div>
                         <button type="submit" class="btn-primary" id="btn-submit-corte-${s.id}" style="padding:8px; font-size:0.9rem;">Guardar Registro</button>
                     </form>
                 </div>
@@ -1115,6 +1223,7 @@ window.registrarCorte = function(e, siembraId) {
     
     const unitId = document.getElementById(`corte-unit-${siembraId}`).value;
     const dateVal = document.getElementById(`corte-date-${siembraId}`).value;
+    const notasVal = document.getElementById(`corte-notas-${siembraId}`).value || '';
     
     if (editingId.cosecha) {
         DB.update('registrosCosecha', editingId.cosecha, {
@@ -1122,7 +1231,8 @@ window.registrarCorte = function(e, siembraId) {
             unidadId: unitId,
             precio: price,
             total: qty * price,
-            fecha: dateVal
+            fecha: dateVal,
+            notas: notasVal
         });
         editingId.cosecha = null;
     } else {
@@ -1132,7 +1242,8 @@ window.registrarCorte = function(e, siembraId) {
             unidadId: unitId,
             precio: price,
             total: qty * price,
-            fecha: dateVal
+            fecha: dateVal,
+            notas: notasVal
         });
     }
     renderCosecha();
@@ -1377,7 +1488,22 @@ function renderDashboard() {
     if (activasArr.length === 0) {
         html += `<tr><td colspan="5" style="padding: 12px; text-align:center; color:#757575;">No hay siembras activas en campo para proyectar.</td></tr>`;
     } else {
-        activasArr.forEach(s => {
+                let activasArrSemanales = siembras.filter(s => s.estado !== 'FINALIZADA');
+        if (viewFilters.semanales !== 'ALL') {
+            activasArrSemanales = activasArrSemanales.filter(s => {
+                const lote = DB.get('germinador').find(l => l.id === s.loteId);
+                return lote && lote.productoId === viewFilters.semanales;
+            });
+        }
+        activasArrSemanales.sort((a, b) => {
+            const loteA = DB.get('germinador').find(l => l.id === a.loteId);
+            const loteB = DB.get('germinador').find(l => l.id === b.loteId);
+            const dateA = loteA ? new Date(loteA.fechaInicio) : new Date(0);
+            const dateB = loteB ? new Date(loteB.fechaInicio) : new Date(0);
+            return dateA - dateB;
+        });
+
+        activasArrSemanales.forEach(s => {
             const lote = DB.get('germinador').find(l => l.id === s.loteId);
             if(lote) {
                 const prod = productos.find(p => p.id === lote.productoId) || {nombre:'?', diasCosecha: 0, rendimientoPorPlanta: 1};
@@ -1407,6 +1533,148 @@ function renderDashboard() {
                 </table>
             </div>
         </div>
+
+        <!-- WEEKLY PROJECTIONS LOGIC -->
+        `;
+        
+        function getWeekInfo(dateStr) {
+            const d = new Date(dateStr);
+            d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
+            const tempD = new Date(d.valueOf());
+            const dayn = (d.getDay() + 6) % 7;
+            tempD.setDate(tempD.getDate() - dayn + 3);
+            const firstThursday = tempD.valueOf();
+            tempD.setMonth(0, 1);
+            if (tempD.getDay() !== 4) {
+                tempD.setMonth(0, 1 + ((4 - tempD.getDay()) + 7) % 7);
+            }
+            return 1 + Math.ceil((firstThursday - tempD) / 604800000);
+        }
+
+        let weeklyData = [];
+        let allWeeks = new Set();
+        let colSums = {};
+
+        activasArr.forEach(s => {
+            const lote = DB.get('germinador').find(l => l.id === s.loteId);
+            if(!lote) return;
+            const prod = productos.find(p => p.id === lote.productoId);
+            if(!prod) return;
+            const campo = campos.find(c => c.id === s.campoId) || {nombre:'?'};
+            
+            let totalYield = (s.cantidad || 0) * (prod.rendimientoPorPlanta || 1);
+            if (totalYield <= 0) return;
+            
+            let salesPerWeek = prod.ventasPorSemana || totalYield;
+            if (salesPerWeek <= 0) salesPerWeek = totalYield;
+            let dailyRate = salesPerWeek / 7;
+            
+            const fSiembra = new Date(s.fechaSiembra);
+            fSiembra.setMinutes(fSiembra.getMinutes() + fSiembra.getTimezoneOffset());
+            fSiembra.setDate(fSiembra.getDate() + (prod.diasCosecha || 0));
+            
+            let currentDate = new Date(fSiembra);
+            currentDate.setHours(0,0,0,0);
+            
+            let remainingYield = totalYield;
+            let rowWeeks = {};
+            
+            while(remainingYield > 0.01) {
+                let amount = Math.min(dailyRate, remainingYield);
+                
+                let dStr = currentDate.toISOString().split('T')[0];
+                let weekNo = getWeekInfo(dStr);
+                
+                if(!rowWeeks[weekNo]) rowWeeks[weekNo] = 0;
+                rowWeeks[weekNo] += amount;
+                
+                if(!colSums[weekNo]) colSums[weekNo] = 0;
+                colSums[weekNo] += amount;
+                
+                allWeeks.add(weekNo);
+                
+                remainingYield -= amount;
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            
+            weeklyData.push({
+                name: `${campo.nombre} ${prod.nombre} T-${s.id.slice(-4)}`.toUpperCase(),
+                weeks: rowWeeks,
+                total: totalYield
+            });
+        });
+
+        let sortedWeeks = Array.from(allWeeks).sort((a,b) => a - b);
+
+        if (weeklyData.length > 0) {
+            html += `
+            <div class="card" id="proyecciones-semanal-card" style="margin-top: 16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+                    <h3>Estimación de Venta Semanal</h3>
+                    <div>
+                        <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#2e7d32; margin-right:8px;" onclick="exportToExcel('tabla-ventas-semanales', 'Venta_Semanal')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">table_view</i>Excel</button>
+                        <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#1565c0;" onclick="printReport('semanales')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">print</i>Imprimir</button>
+                    </div>
+                </div>
+                <p class="list-subtitle no-print" style="margin-bottom:12px;">Distribución de la cosecha proyectada en base al promedio de ventas por semana configurado para cada producto.</p>
+                
+                <div class="form-group no-print" style="max-width: 300px; margin-bottom: 16px;">
+                    <label>Filtrar por producto</label>
+                    <select onchange="setFilterSemanales(this.value)">
+                        <option value="ALL">Todos los productos</option>
+                        ${productos.map(p => `<option value="${p.id}" ${viewFilters.semanales === p.id ? 'selected' : ''}>${p.nombre}</option>`).join('')}
+                    </select>
+                </div>
+                
+                <div class="no-print" style="margin-bottom: 24px; padding: 16px; background: #f9f9f9; border-radius: 8px; overflow-x: auto;">
+                    <h4 style="text-align:center; margin-bottom: 16px; color: var(--primary-dark);">Volumen Total por Semana</h4>
+                    <div style="display: flex; align-items: flex-end; justify-content: center; gap: 8px; height: 150px; border-bottom: 2px solid #ccc; padding-bottom: 4px; min-width: max-content;">
+                        ${sortedWeeks.map(w => {
+                            const maxVal = Math.max(...Object.values(colSums));
+                            const h = maxVal > 0 ? (colSums[w] / maxVal) * 100 : 0;
+                            const hPx = Math.max(h, 2);
+                            return `
+                            <div style="display:flex; flex-direction:column; align-items:center; width: 45px;">
+                                <span style="font-size: 0.7rem; color: #555; margin-bottom: 4px;">${Math.round(colSums[w]).toLocaleString()}</span>
+                                <div style="width: 100%; background: var(--primary-color); height: ${hPx}%; border-radius: 2px 2px 0 0; opacity: 0.8;"></div>
+                                <span style="font-size: 0.8rem; font-weight: bold; margin-top: 4px;">S${w}</span>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+                
+                <div style="overflow-x:auto;">
+                    <table id="tabla-ventas-semanales" style="width:100%; border-collapse: collapse; min-width: 600px; text-align:right;">
+                        <thead>
+                            <tr style="background-color: #81c784; color: white;">
+                                <th style="padding: 8px; border: 1px solid #ccc; text-align:left;">ETAPA</th>
+                                <th style="padding: 8px; border: 1px solid #ccc; width: 40px;">#</th>
+                                ${sortedWeeks.map(w => `<th style="padding: 8px; border: 1px solid #ccc; text-align:center;">${w}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${weeklyData.map((wd, i) => `
+                                <tr>
+                                    <td style="padding: 4px 8px; border: 1px solid #ccc; text-align:left; font-size:0.85rem; font-weight:bold;">${wd.name}</td>
+                                    <td style="padding: 4px 8px; border: 1px solid #ccc; text-align:center;">${i + 1}</td>
+                                    ${sortedWeeks.map(w => `<td style="padding: 4px 8px; border: 1px solid #ccc;">${wd.weeks[w] ? Math.round(wd.weeks[w]).toLocaleString() : '-'}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                        <tfoot>
+                            <tr style="background-color: #f1f8e9; font-weight: bold;">
+                                <td colspan="2" style="padding: 8px; border: 1px solid #ccc; text-align:center;">TOTAL</td>
+                                ${sortedWeeks.map(w => `<td style="padding: 8px; border: 1px solid #ccc;">${Math.round(colSums[w]).toLocaleString()}</td>`).join('')}
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            `;
+        }
+
+        html += `
 
         <h3 class="no-print" style="margin-bottom:12px; margin-top:24px; color:var(--text-muted); font-size:1rem;">Historial de Siembras Finalizadas</h3>
         <div id="list-historial" class="no-print">
@@ -1474,6 +1742,9 @@ function renderDashboard() {
                             Desglose de ventas (${recs.length})
                         </button>
                     </div>
+
+                    ${lote.notas ? `<div style="font-size:0.8rem; margin-top:12px; padding:6px; background:#fff3e0; border-left:3px solid #f57f17;"><strong>Notas Germinación:</strong><br/>${lote.notas.replace(/\n/g, '<br/>')}</div>` : ''}
+                    ${s.notas ? `<div style="font-size:0.8rem; margin-top:4px; padding:6px; background:#e3f2fd; border-left:3px solid #1565c0;"><strong>Notas Siembra:</strong><br/>${s.notas.replace(/\n/g, '<br/>')}</div>` : ''}
                     
                     <div id="ventas-${s.id}" style="display:none; margin-top:12px; border-top:1px dashed #ccc; padding-top:8px;">
                         <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; font-weight:bold;">
@@ -1483,10 +1754,13 @@ function renderDashboard() {
                         </div>
                         ${[...recs].sort((a,b) => new Date(a.fecha) - new Date(b.fecha)).map(r => {
                             const uni = unidadesDB.find(u => u.id === r.unidadId) || {abrev: ''};
-                            return `<div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px; padding:4px 0; border-bottom:1px solid #f0f0f0;">
-                                <span>${r.fecha}</span>
-                                <span>${r.cantidad} ${uni.abrev}</span>
-                                <span style="color:var(--primary-dark)">${r.total} <button class="btn-primary no-print" style="padding:2px 4px; font-size:0.7rem; margin-left:4px;" onclick="editRegistroCosecha('${r.id}')">✏️</button></span>
+                            return `<div style="margin-bottom:8px; border-bottom:1px solid #f0f0f0; padding-bottom:4px;">
+                                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:2px;">
+                                    <span>${r.fecha}</span>
+                                    <span>${r.cantidad} ${uni.abrev}</span>
+                                    <span style="color:var(--primary-dark)">${r.total} <button class="btn-primary no-print" style="padding:2px 4px; font-size:0.7rem; margin-left:4px;" onclick="editRegistroCosecha('${r.id}')">✏️</button></span>
+                                </div>
+                                ${r.notas ? `<div style="font-size:0.75rem; color:#555; font-style:italic;"><strong>Nota:</strong> ${r.notas.replace(/\n/g, '<br/>')}</div>` : ''}
                             </div>`;
                         }).join('')}
                     </div>
