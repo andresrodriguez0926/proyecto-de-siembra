@@ -52,6 +52,9 @@ body {
 .view.active {
     display: block;
 }
+#view-login.active {
+    display: flex !important;
+}
 
 .padded-container {
     padding: 16px;
@@ -240,26 +243,35 @@ button.btn-danger {
     body {
         background-color: white;
     }
-    #main-header, #bottom-nav, .no-print {
+    .no-print {
+        display: none !important;
+    }
+    #main-header, #bottom-nav {
         display: none !important;
     }
     #main-content {
         padding-top: 0 !important;
         padding-bottom: 0 !important;
         margin-top: 0 !important;
+        overflow: visible !important;
     }
     .card {
         box-shadow: none !important;
-        border: none !important;
-        margin: 0 !important;
-        padding: 0 !important;
+        border: 1px solid #ccc !important;
+        page-break-inside: avoid;
     }
     .padded-container {
         padding: 0 !important;
     }
-    /* Force background colors to print for gantt bars */
     * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+    }
+
+    body.print-gantt #proyecciones-card {
+        display: none !important;
+    }
+    body.print-proyecciones #gantt-card {
+        display: none !important;
     }
 }

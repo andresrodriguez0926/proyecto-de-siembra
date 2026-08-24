@@ -1,27 +1,59 @@
-// --- DATABASE WAPPER (LocalStorage) ---
+// --- FIREBASE CONFIG ---
+const firebaseConfig = {
+  apiKey: "AIzaSyD-tmKkLAKSwrQz0eLJ-DHzJfefQLhC27E",
+  authDomain: "proyecto-de-siembra-606d9.firebaseapp.com",
+  projectId: "proyecto-de-siembra-606d9",
+  storageBucket: "proyecto-de-siembra-606d9.firebasestorage.app",
+  messagingSenderId: "302125478245",
+  appId: "1:302125478245:web:b9476eed78a10d749db18c",
+  measurementId: "G-2J2KK7F31W"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+
+let currentUser = null;
+
+// --- DATABASE WAPPER (Memory + Firestore) ---
+const memoryDB = {
+    productos: [], campos: [], unidades: [], germinador: [], siembras: [], registrosCosecha: []
+};
+
 const DB = {
-    get: (key) => JSON.parse(localStorage.getItem(key)) || [],
-    set: (key, data) => localStorage.setItem(key, JSON.stringify(data)),
+    get: (key) => memoryDB[key] || [],
     add: (key, item) => {
-        const data = DB.get(key);
-        item.id = Date.now().toString();
-        data.push(item);
-        DB.set(key, data);
-        return item;
+        item.autorId = currentUser ? currentUser.uid : 'anon';
+        item.autorEmail = currentUser ? currentUser.email : 'Anónimo';
+        item.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        db.collection(key).add(item);
     },
     update: (key, id, updates) => {
-        const data = DB.get(key);
-        const index = data.findIndex(i => i.id === id);
-        if (index > -1) {
-            data[index] = { ...data[index], ...updates };
-            DB.set(key, data);
-        }
+        db.collection(key).doc(id).update(updates);
     },
     remove: (key, id) => {
-        const data = DB.get(key);
-        DB.set(key, data.filter(i => i.id !== id));
+        db.collection(key).doc(id).delete();
     }
 };
+
+// Start Firestore Listeners
+function startListeners() {
+    const collections = Object.keys(memoryDB);
+    collections.forEach(col => {
+        db.collection(col).onSnapshot(snapshot => {
+            const data = [];
+            snapshot.forEach(doc => {
+                data.push({ id: doc.id, ...doc.data() });
+            });
+            memoryDB[col] = data;
+            
+            // Re-render current view if data changes
+            const activeView = document.querySelector('.view.active');
+            if (activeView && activeView.id !== 'view-login') {
+                renderView(activeView.id);
+            }
+        });
+    });
+}
 
 // --- NAVIGATION LOGIC ---
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -51,19 +83,32 @@ function renderView(viewId) {
     if (viewId === 'view-siembra') renderSiembra();
     if (viewId === 'view-cosecha') renderCosecha();
     if (viewId === 'view-dashboard') renderDashboard();
+    if (viewId === 'view-alertas') renderAlertas();
 }
 
 // ==========================================
 // FILTROS GLOBALES
 // ==========================================
 let viewFilters = { germinador: 'ALL', siembra: 'ALL', cosecha: 'ALL' };
+let viewFiltersAlertas = 'ALL';
+window.setFiltroAlertas = function(val) { viewFiltersAlertas = val; renderAlertas(); };
 
 window.setFilter = function(view, value) {
     viewFilters[view] = value;
-    if (view === 'germinador') renderGerminador();
-    else if (view === 'siembra') renderSiembra();
-    else if (view === 'cosecha') renderCosecha();
+    renderView('view-' + view);
 };
+
+window.printReport = function(type) {
+    if (type === 'gantt') {
+        document.body.classList.add('print-gantt');
+        window.print();
+        document.body.classList.remove('print-gantt');
+    } else if (type === 'proyecciones') {
+        document.body.classList.add('print-proyecciones');
+        window.print();
+        document.body.classList.remove('print-proyecciones');
+    }
+}
 
 // ==========================================
 // CONFIGURACIÓN VIEW
@@ -73,6 +118,26 @@ let editingId = { productos: null, campos: null, unidades: null };
 function renderConfiguracion() {
     const container = document.getElementById('configuracion-container');
     container.innerHTML = `
+        <!-- Formulario Usuarios (Firebase Auth) -->
+        <div class="card">
+            <h3>Registrar Empleado / Usuario</h3>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">Crea una cuenta para que tus empleados ingresen. <strong>Atención:</strong> Al registrar uno nuevo, Firebase iniciará su sesión automáticamente (tendrás que cerrar tu sesión e ingresar con la tuya de nuevo).</p>
+            <form id="form-usuario">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Correo Electrónico (inventado o real)</label>
+                        <input type="email" id="user-email" placeholder="ej. juan@mifinca.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Contraseña (mínimo 6 caracteres)</label>
+                        <input type="password" id="user-pass" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary" style="background-color:#1565c0;">Registrar Usuario en Firebase</button>
+                <p id="user-msg" style="margin-top:8px; font-size:0.85rem; font-weight:bold;"></p>
+            </form>
+        </div>
+
         <div class="card">
             <h3>Productos (Cultivos)</h3>
             <form id="form-producto">
@@ -88,6 +153,16 @@ function renderConfiguracion() {
                     <div class="form-group">
                         <label>Días Cosecha</label>
                         <input type="number" id="prod-hdays" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Frecuencia de Germinación (días)</label>
+                        <input type="number" id="prod-freqdays" placeholder="Ej. 15" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Rendimiento por planta</label>
+                        <input type="number" step="0.01" id="prod-yield" placeholder="Ej. 2.5" required>
                     </div>
                 </div>
                 <button type="submit" id="btn-submit-producto" class="btn-primary">Agregar Producto</button>
@@ -137,12 +212,32 @@ function renderConfiguracion() {
     `;
 
     // Event Listeners for Config Forms
+    document.getElementById('form-usuario').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = document.getElementById('user-email').value;
+        const pass = document.getElementById('user-pass').value;
+        const msg = document.getElementById('user-msg');
+        
+        auth.createUserWithEmailAndPassword(email, pass)
+            .then((cred) => {
+                msg.style.color = "green";
+                msg.textContent = "Usuario creado exitosamente: " + cred.user.email;
+                e.target.reset();
+            })
+            .catch(error => {
+                msg.style.color = "red";
+                msg.textContent = "Error: " + error.message;
+            });
+    });
+
     document.getElementById('form-producto').addEventListener('submit', (e) => {
         e.preventDefault();
         const payload = {
             nombre: document.getElementById('prod-name').value,
             diasGerminacion: parseInt(document.getElementById('prod-gdays').value),
-            diasCosecha: parseInt(document.getElementById('prod-hdays').value)
+            diasCosecha: parseInt(document.getElementById('prod-hdays').value),
+            frecuenciaGerminacion: parseInt(document.getElementById('prod-freqdays').value) || 0,
+            rendimientoPorPlanta: parseFloat(document.getElementById('prod-yield').value) || 1
         };
         
         if (editingId.productos) {
@@ -207,6 +302,8 @@ window.editItem = function(type, id) {
         document.getElementById('prod-name').value = item.nombre;
         document.getElementById('prod-gdays').value = item.diasGerminacion;
         document.getElementById('prod-hdays').value = item.diasCosecha;
+        document.getElementById('prod-freqdays').value = item.frecuenciaGerminacion || 0;
+        document.getElementById('prod-yield').value = item.rendimientoPorPlanta || 1;
         editingId.productos = id;
         document.getElementById('btn-submit-producto').textContent = "Actualizar Producto";
         document.getElementById('form-producto').scrollIntoView({ behavior: 'smooth' });
@@ -232,7 +329,7 @@ function renderConfigLists() {
         <div class="list-item">
             <div class="list-info">
                 <p class="list-title">${p.nombre}</p>
-                <p class="list-subtitle">Germina: ${p.diasGerminacion}d | Cosecha: ${p.diasCosecha}d</p>
+                <p class="list-subtitle">Germina: ${p.diasGerminacion}d | Cosecha: ${p.diasCosecha}d | Freq: ${p.frecuenciaGerminacion || 0}d | Rend: ${p.rendimientoPorPlanta || 1}</p>
             </div>
             <div>
                 <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-right:4px;" onclick="editItem('productos', '${p.id}')">✏️</button>
@@ -347,6 +444,7 @@ function renderGerminador() {
                     </div>
                     <p class="list-subtitle">Inicio: ${l.fechaInicio}</p>
                     <p class="list-subtitle">Semillas iniciales: ${l.cantidad}</p>
+                    <p class="list-subtitle">Registrado por: <strong>${l.autorEmail || 'Anónimo'}</strong></p>
                     ${l.estado === 'LISTO' ? `<p class="list-subtitle" style="color:var(--primary-color); font-weight:bold;">Disponibles para siembra: ${disponibles}</p>` : ''}
                     <p class="list-subtitle">Salida estimada: <strong>${l.fechaSalida}</strong></p>
                     
@@ -475,6 +573,7 @@ function renderSiembra() {
                         <p class="list-subtitle">Sembradas: <strong>${s.cantidad}</strong></p>
                         <p class="list-subtitle">Días en campo: <strong>${diasPasados >= 0 ? diasPasados : 0}</strong></p>
                     </div>
+                    <p class="list-subtitle" style="margin-bottom:8px;">Registrado por: <strong>${s.autorEmail || 'Anónimo'}</strong></p>
                     <p class="list-subtitle" style="margin-bottom:8px;">Cosecha estimada: <strong>${s.fechaCosecha}</strong></p>
                     
                     ${s.retrasoDias > 0 ? `<p class="list-subtitle" style="color:#d32f2f;"><strong>Retraso en trasplante:</strong> ${s.retrasoDias} día(s)</p>` : ''}
@@ -675,6 +774,110 @@ window.finalizarSiembra = function(id) {
 }
 
 // ==========================================
+// ALERTAS VIEW
+// ==========================================
+function renderAlertas() {
+    const container = document.getElementById('alertas-container');
+    const productos = DB.get('productos');
+    const germinador = DB.get('germinador');
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    let html = `
+        <div class="card" style="margin-bottom:16px;">
+            <label style="font-weight:bold; color:var(--primary-dark); font-size:0.9rem;">Filtrar Alertas</label>
+            <select onchange="setFiltroAlertas(this.value)" style="margin-top:4px;">
+                <option value="ALL" ${viewFiltersAlertas === 'ALL' ? 'selected' : ''}>Todas las Alertas</option>
+                <option value="FREQ" ${viewFiltersAlertas === 'FREQ' ? 'selected' : ''}>Solo Frecuencia Germinación</option>
+                <option value="TRAS" ${viewFiltersAlertas === 'TRAS' ? 'selected' : ''}>Solo Retrasos de Trasplante</option>
+            </select>
+        </div>
+        <div id="list-alertas">
+    `;
+
+    let alertasArray = [];
+
+    // 1. Frecuencia Germinación
+    if (viewFiltersAlertas === 'ALL' || viewFiltersAlertas === 'FREQ') {
+        productos.forEach(prod => {
+            if (prod.frecuenciaGerminacion && prod.frecuenciaGerminacion > 0) {
+                const lotesProd = germinador.filter(l => l.productoId === prod.id);
+                lotesProd.sort((a,b) => new Date(b.fechaInicio) - new Date(a.fechaInicio));
+                const ultimoLote = lotesProd.length > 0 ? lotesProd[0] : null;
+
+                if (!ultimoLote) {
+                    alertasArray.push(`
+                        <div class="card" style="border-left: 4px solid #d32f2f;">
+                            <h4 style="color:#c62828; margin-bottom:4px;">Falta Germinar: ${prod.nombre}</h4>
+                            <p class="list-subtitle">Nunca se ha registrado una germinación para este producto.</p>
+                            <p class="list-subtitle" style="margin-top:4px; font-weight:bold;">Frecuencia exigida: Cada ${prod.frecuenciaGerminacion} días.</p>
+                        </div>
+                    `);
+                } else {
+                    const fInicio = new Date(ultimoLote.fechaInicio);
+                    fInicio.setHours(0,0,0,0);
+                    const diffTime = today.getTime() - fInicio.getTime();
+                    const diasPasados = Math.floor(diffTime / (1000 * 3600 * 24));
+                    
+                    if (diasPasados > prod.frecuenciaGerminacion) {
+                        const retraso = diasPasados - prod.frecuenciaGerminacion;
+                        alertasArray.push(`
+                            <div class="card" style="border-left: 4px solid #d32f2f;">
+                                <h4 style="color:#c62828; margin-bottom:4px;">Retraso Nueva Germinación: ${prod.nombre}</h4>
+                                <p class="list-subtitle">La última germinación fue hace <strong>${diasPasados} días</strong> (${ultimoLote.fechaInicio}).</p>
+                                <p class="list-subtitle" style="margin-top:4px;">Frecuencia exigida: Cada ${prod.frecuenciaGerminacion} días.</p>
+                                <div style="background-color: #ffebee; color: #c62828; padding: 4px 8px; border-radius: 4px; margin-top: 8px; font-size: 0.85rem; font-weight: bold; display:inline-block;">¡Retraso de ${retraso} día(s)!</div>
+                            </div>
+                        `);
+                    } else {
+                        const faltan = prod.frecuenciaGerminacion - diasPasados;
+                        alertasArray.push(`
+                            <div class="card" style="border-left: 4px solid #fbc02d;">
+                                <h4 style="color:#f57f17; margin-bottom:4px;">Próxima Germinación: ${prod.nombre}</h4>
+                                <p class="list-subtitle">Última hace ${diasPasados} días. Faltan <strong>${faltan} días</strong> para la siguiente ronda.</p>
+                            </div>
+                        `);
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Retraso Trasplante
+    if (viewFiltersAlertas === 'ALL' || viewFiltersAlertas === 'TRAS') {
+        germinador.forEach(l => {
+            if (l.estado === 'EN_GERMINACION' || l.estado === 'LISTO') {
+                const prod = productos.find(p => p.id === l.productoId) || {nombre: 'Desconocido'};
+                const fSalida = new Date(l.fechaSalida);
+                fSalida.setHours(0,0,0,0);
+                const diffTime = today.getTime() - fSalida.getTime();
+                const diasRetraso = Math.floor(diffTime / (1000 * 3600 * 24));
+
+                if (diasRetraso > 0) {
+                    alertasArray.push(`
+                        <div class="card" style="border-left: 4px solid #d32f2f;">
+                            <h4 style="color:#c62828; margin-bottom:4px;">Retraso Trasplante: ${prod.nombre}</h4>
+                            <p class="list-subtitle">Lote iniciado el ${l.fechaInicio}. Debió salir el <strong>${l.fechaSalida}</strong>.</p>
+                            <p class="list-subtitle" style="margin-top:4px;">Semillas iniciales: ${l.cantidad} | Disponibles: ${l.cantidad - (l.sembradas || 0)}</p>
+                            <div style="background-color: #ffebee; color: #c62828; padding: 4px 8px; border-radius: 4px; margin-top: 8px; font-size: 0.85rem; font-weight: bold; display:inline-block;">¡Lleva ${diasRetraso} día(s) en espera!</div>
+                        </div>
+                    `);
+                }
+            }
+        });
+    }
+
+    if (alertasArray.length === 0) {
+        html += '<p style="text-align:center; color:#757575; padding: 12px;">No hay alertas pendientes en este momento. ¡Todo está al día!</p>';
+    } else {
+        html += alertasArray.join('');
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// ==========================================
 // DASHBOARD VIEW
 // ==========================================
 function renderDashboard() {
@@ -688,7 +891,7 @@ function renderDashboard() {
     const registros = DB.get('registrosCosecha');
 
     const container = document.getElementById('dashboard-container');
-    container.innerHTML = `
+    let html = `
         <div class="metrics-grid no-print">
             <div class="metric-card">
                 <div class="metric-value" style="color:#f57f17">${lotes}</div>
@@ -703,7 +906,7 @@ function renderDashboard() {
         <div class="card" id="gantt-card">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <h3>Reporte Cronograma (Gantt)</h3>
-                <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#1565c0;" onclick="window.print()"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">print</i>Imprimir</button>
+                <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#1565c0;" onclick="printReport('gantt')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">print</i>Imprimir</button>
             </div>
             <div class="form-row no-print">
                 <div class="form-group">
@@ -733,11 +936,68 @@ function renderDashboard() {
                     <input type="date" id="gantt-to">
                 </div>
             </div>
-            <button class="btn-primary no-print" onclick="renderGantt()">Generar Reporte Visual</button>
+            <button class="btn-primary no-print" onclick="renderGantt()" style="margin-bottom:16px;">Generar Reporte Visual</button>
+            
             <div id="gantt-results" style="margin-top:16px;"></div>
         </div>
 
-        <h3 class="no-print" style="margin-bottom:12px; color:var(--text-muted); font-size:1rem;">Historial de Siembras</h3>
+        <!-- REPORT OF PROJECTIONS -->
+        <div class="card" id="proyecciones-card" style="margin-top: 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+                <h3>Proyecciones de Cosecha</h3>
+                <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#1565c0;" onclick="printReport('proyecciones')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">print</i>Imprimir</button>
+            </div>
+            <p class="list-subtitle no-print" style="margin-bottom:12px;">Proyección basada en las siembras activas en el campo y el rendimiento configurado por producto.</p>
+            <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse: collapse; min-width: 500px; text-align:left;">
+                    <thead>
+                        <tr style="background-color: var(--primary-light); color: white;">
+                            <th style="padding: 8px; border: 1px solid #ccc;">Producto</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Campo</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Semillas Plantadas</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Cosecha Estimada</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Fecha Inicio Proyectada</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
+    const activasArr = siembras.filter(s => s.estado !== 'FINALIZADA');
+    if (activasArr.length === 0) {
+        html += `<tr><td colspan="5" style="padding: 12px; text-align:center; color:#757575;">No hay siembras activas en campo para proyectar.</td></tr>`;
+    } else {
+        activasArr.forEach(s => {
+            const lote = DB.get('germinador').find(l => l.id === s.loteId);
+            if(lote) {
+                const prod = productos.find(p => p.id === lote.productoId) || {nombre:'?', diasCosecha: 0, rendimientoPorPlanta: 1};
+                const campo = campos.find(c => c.id === s.campoId) || {nombre:'?'};
+                const sembradas = s.cantidad || 0;
+                const proyectada = (sembradas * (prod.rendimientoPorPlanta || 1)).toFixed(1);
+                
+                const fSiembra = new Date(s.fechaSiembra);
+                fSiembra.setDate(fSiembra.getDate() + (prod.diasCosecha || 0));
+                const fechaCosecha = fSiembra.toISOString().split('T')[0];
+
+                html += `
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ccc;"><strong>${prod.nombre}</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">${campo.nombre}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">${sembradas.toLocaleString()}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc; font-weight:bold; color:var(--primary-dark);">${proyectada.toLocaleString()}</td>
+                        <td style="padding: 8px; border: 1px solid #ccc;">${fechaCosecha}</td>
+                    </tr>
+                `;
+            }
+        });
+    }
+
+    html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <h3 class="no-print" style="margin-bottom:12px; margin-top:24px; color:var(--text-muted); font-size:1rem;">Historial de Siembras Finalizadas</h3>
         <div id="list-historial" class="no-print">
             ${finalizadas.reverse().map(s => {
                 const lote = DB.get('germinador').find(l => l.id === s.loteId) || {};
@@ -759,7 +1019,7 @@ function renderDashboard() {
                 if (recs.length > 0) {
                     const sortedRecs = [...recs].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
                     if (!s.fechaInicioCosecha) inicioCosecha = sortedRecs[0].fecha;
-                    finCosecha = sortedRecs[sortedRecs.length - 1].fecha; // Priorizar la última venta siempre
+                    finCosecha = sortedRecs[sortedRecs.length - 1].fecha;
                 }
 
                 let retrasoText = "A tiempo";
@@ -777,6 +1037,7 @@ function renderDashboard() {
                         <strong>${prod.nombre}</strong>
                         <span class="badge" style="background:#e0e0e0;">${campo.nombre}</span>
                     </div>
+                    <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">Siembra registrada por: ${s.autorEmail || 'Anónimo'}</p>
                     
                     <div style="font-size:0.85rem; margin-bottom: 8px; color: var(--text-muted); display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
                         <div><strong>Germinó:</strong> ${lote.fechaInicio || 'N/A'}</div>
@@ -824,12 +1085,16 @@ function renderDashboard() {
         </div>
     `;
 
+    container.innerHTML = html;
+
     // Fechas por defecto para Gantt (últimos 6 meses)
     const today = new Date();
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(today.getMonth() - 6);
     document.getElementById('gantt-to').value = today.toISOString().split('T')[0];
     document.getElementById('gantt-from').value = sixMonthsAgo.toISOString().split('T')[0];
+    
+    renderGantt();
 }
 
 window.renderGantt = function() {
@@ -1024,8 +1289,54 @@ window.renderGantt = function() {
     }
 }
 
-// Init App
-document.addEventListener('DOMContentLoaded', () => {
-    // Initial Render
-    renderDashboard();
+// ==========================================
+// AUTHENTICATION LOGIC
+// ==========================================
+
+auth.onAuthStateChanged(user => {
+    if (user) {
+        // User is signed in
+        currentUser = user;
+        document.getElementById('view-login').classList.remove('active');
+        
+        // Setup initial UI state if not already set
+        const activeView = document.querySelector('.view.active');
+        if (!activeView || activeView.id === 'view-login') {
+            document.getElementById('view-dashboard').classList.add('active');
+        }
+        
+        document.getElementById('main-header').style.display = 'flex';
+        document.getElementById('bottom-nav').style.display = 'flex';
+        
+        startListeners();
+    } else {
+        // User is signed out
+        currentUser = null;
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('view-login').classList.add('active');
+        
+        document.getElementById('main-header').style.display = 'none';
+        document.getElementById('bottom-nav').style.display = 'none';
+    }
 });
+
+document.getElementById('form-login').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const pass = document.getElementById('login-password').value;
+    const errorEl = document.getElementById('login-error');
+    
+    auth.signInWithEmailAndPassword(email, pass)
+        .then(() => {
+            errorEl.style.display = 'none';
+            e.target.reset();
+        })
+        .catch(error => {
+            errorEl.textContent = "Error al iniciar sesión: " + error.message;
+            errorEl.style.display = 'block';
+        });
+});
+
+window.logout = function() {
+    auth.signOut();
+};

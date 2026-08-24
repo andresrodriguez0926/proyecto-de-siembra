@@ -11,13 +11,40 @@
     <meta name="theme-color" content="#2e7d32">
 </head>
 <body>
-    <header id="main-header">
+    <header id="main-header" style="display:flex; justify-content:space-between; align-items:center;">
         <h1 id="page-title">Dashboard</h1>
+        <div>
+            <button class="nav-btn no-print" onclick="logout()" style="color:white; background:none; border:none; cursor:pointer; margin-right: 12px;" title="Cerrar Sesión">
+                <i class="material-icons">logout</i>
+            </button>
+            <button id="btn-config-header" class="nav-btn no-print" data-target="view-configuracion" data-title="Configuración" style="color:white; width:auto; height:auto; background:none; cursor:pointer;" title="Configuración">
+                <i class="material-icons">settings</i>
+            </button>
+        </div>
     </header>
 
     <main id="main-content">
+        <!-- Login -->
+        <section id="view-login" class="view" style="justify-content:center; align-items:center; height:100vh; flex-direction:column; background-color: var(--primary-light);">
+            <div class="card" style="width:90%; max-width:400px; padding:32px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <h2 style="text-align:center; color:var(--primary-dark); margin-bottom:24px;">Iniciar Sesión</h2>
+                <form id="form-login">
+                    <div class="form-group">
+                        <label>Correo Electrónico</label>
+                        <input type="email" id="login-email" required style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; margin-top:6px;">
+                    </div>
+                    <div class="form-group" style="margin-top:16px;">
+                        <label>Contraseña</label>
+                        <input type="password" id="login-password" required style="width:100%; padding:10px; border:1px solid #ccc; border-radius:6px; margin-top:6px;">
+                    </div>
+                    <button type="submit" class="btn-primary" style="width:100%; padding:12px; margin-top:24px; font-size:1.1rem; border-radius:6px; background-color:var(--primary-color);">Ingresar</button>
+                    <p id="login-error" style="color:#d32f2f; margin-top:12px; text-align:center; font-size:0.9rem; display:none;"></p>
+                </form>
+            </div>
+        </section>
+
         <!-- Dashboard -->
-        <section id="view-dashboard" class="view active">
+        <section id="view-dashboard" class="view">
             <div id="dashboard-container" class="padded-container"></div>
         </section>
 
@@ -34,6 +61,11 @@
         <!-- Cosecha -->
         <section id="view-cosecha" class="view">
             <div id="cosecha-container" class="padded-container"></div>
+        </section>
+
+        <!-- Alertas -->
+        <section id="view-alertas" class="view">
+            <div id="alertas-container" class="padded-container"></div>
         </section>
 
         <!-- Configuración -->
@@ -60,11 +92,16 @@
             <i class="material-icons">content_cut</i>
             <span>Cosecha</span>
         </button>
-        <button class="nav-btn" data-target="view-configuracion" data-title="Configuración">
-            <i class="material-icons">settings</i>
-            <span>Config</span>
+        <button class="nav-btn" data-target="view-alertas" data-title="Alertas">
+            <i class="material-icons">notifications</i>
+            <span>Alertas</span>
         </button>
     </nav>
+
+    <!-- Firebase Compat SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
     <script src="app.js"></script>
     <script>
