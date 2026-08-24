@@ -1,10 +1,10 @@
-const CACHE_NAME = 'agroplan-v32';
+const CACHE_NAME = 'agroplan-v35';
 const urlsToCache = [
   './',
   './index.html',
   './style.css',
   './app.js',
-  './manifest.json',
+  './agro-manifest.json',
   'https://fonts.googleapis.com/icon?family=Material+Icons'
 ];
 

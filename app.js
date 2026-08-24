@@ -1,3 +1,101 @@
+
+window.editGerminador = function(id) {
+    const item = DB.get('germinador').find(i => i.id === id);
+    if (!item) return;
+    document.getElementById('germ-prod').value = item.productoId;
+    document.getElementById('germ-qty').value = item.cantidad;
+    document.getElementById('germ-date').value = item.fechaInicio;
+    editingId.germinador = id;
+    document.getElementById('btn-submit-germinador').textContent = 'Actualizar Germinación';
+    document.getElementById('form-germinador').scrollIntoView({ behavior: 'smooth' });
+};
+
+window.editSiembra = function(id) {
+    const item = DB.get('siembras').find(i => i.id === id);
+    if (!item) return;
+    
+    editingId.siembra = id;
+    renderView('view-siembra');
+    
+    setTimeout(() => {
+        document.getElementById('siem-campo').value = item.campoId;
+        document.getElementById('siem-date').value = item.fechaSiembra;
+        
+        document.getElementById('siem-lotes-container').innerHTML = '';
+        if (window.addLoteRow) {
+            window.addLoteRow(item.loteId, item.cantidad);
+        }
+        
+        const btnAdd = document.getElementById('btn-add-lote');
+        if (btnAdd) btnAdd.style.display = 'none';
+        
+        document.getElementById('btn-submit-siembra').textContent = 'Actualizar Siembra';
+        document.getElementById('form-siembra').scrollIntoView({ behavior: 'smooth' });
+    }, 50);
+};
+
+window.anularSiembra = function(id) {
+    if(!confirm('¿Estás seguro de anular esta siembra? Las plantas se devolverán al lote original en germinación.')) return;
+    
+    const siembra = DB.get('siembras').find(s => s.id === id);
+    if (!siembra) return;
+    
+    const lote = DB.get('germinador').find(l => l.id === siembra.loteId);
+    if (lote) {
+        let sembradasActuales = (lote.sembradas || 0) - siembra.cantidad;
+        if (sembradasActuales < 0) sembradasActuales = 0;
+        
+        let nuevoEstado = lote.estado;
+        if (sembradasActuales < lote.cantidad && lote.estado === 'SEMBRADO') {
+            nuevoEstado = 'LISTO';
+        }
+        
+        DB.update('germinador', lote.id, { 
+            sembradas: sembradasActuales, 
+            estado: nuevoEstado 
+        });
+    }
+    
+    DB.remove('siembras', id);
+    
+    // Also remove any related cosecha records just in case
+    const registros = DB.get('registrosCosecha').filter(r => r.siembraId === id);
+    registros.forEach(r => DB.remove('registrosCosecha', r.id));
+    
+    renderSiembra();
+};
+
+window.editRegistroCosecha = function(id) {
+    const item = DB.get('registrosCosecha').find(i => i.id === id);
+    if (!item) return;
+    const siembraId = item.siembraId;
+    
+    // Go to cosecha view
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-cosecha').classList.add('active');
+    
+    // Activating correct button
+    document.querySelectorAll('.nav-btn').forEach(b => {
+        if(b.getAttribute('data-target') === 'view-cosecha') b.classList.add('active');
+    });
+    
+    renderView('view-cosecha');
+    
+    setTimeout(() => {
+        const qtyInput = document.getElementById('corte-qty-' + siembraId);
+        if (qtyInput) {
+            qtyInput.value = item.cantidad;
+            document.getElementById('corte-unit-' + siembraId).value = item.unidadId;
+            document.getElementById('corte-price-' + siembraId).value = item.precio || 0;
+            document.getElementById('corte-date-' + siembraId).value = item.fecha;
+            editingId.cosecha = id;
+            document.getElementById('btn-submit-corte-' + siembraId).textContent = 'Actualizar Corte';
+            qtyInput.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, 100);
+};
+
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
   apiKey: "AIzaSyD-tmKkLAKSwrQz0eLJ-DHzJfefQLhC27E",
@@ -33,6 +131,17 @@ const DB = {
     remove: (key, id) => {
         db.collection(key).doc(id).delete();
     }
+};
+
+window.exportToExcel = function(tableId, filename) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    
+    // Create a workbook and add the table
+    const wb = XLSX.utils.table_to_book(table, {sheet: "Reporte"});
+    
+    // Generate file and trigger download
+    XLSX.writeFile(wb, filename + '.xlsx');
 };
 
 // Start Firestore Listeners
@@ -89,13 +198,18 @@ function renderView(viewId) {
 // ==========================================
 // FILTROS GLOBALES
 // ==========================================
-let viewFilters = { germinador: 'ALL', siembra: 'ALL', cosecha: 'ALL' };
+let viewFilters = { germinador: 'ALL', siembra: 'ALL', cosecha: 'ALL', proyeccion: 'ALL' };
 let viewFiltersAlertas = 'ALL';
 window.setFiltroAlertas = function(val) { viewFiltersAlertas = val; renderAlertas(); };
 
 window.setFilter = function(view, value) {
     viewFilters[view] = value;
     renderView('view-' + view);
+};
+
+window.setFilterProyeccion = function(value) {
+    viewFilters.proyeccion = value;
+    renderDashboard();
 };
 
 window.printReport = function(type) {
@@ -107,13 +221,21 @@ window.printReport = function(type) {
         document.body.classList.add('print-proyecciones');
         window.print();
         document.body.classList.remove('print-proyecciones');
+    } else if (type === 'germinacion') {
+        document.body.classList.add('print-germinacion');
+        window.print();
+        document.body.classList.remove('print-germinacion');
+    } else if (type === 'siembra') {
+        document.body.classList.add('print-siembra');
+        window.print();
+        document.body.classList.remove('print-siembra');
     }
 }
 
 // ==========================================
 // CONFIGURACIÓN VIEW
 // ==========================================
-let editingId = { productos: null, campos: null, unidades: null };
+let editingId = { productos: null, campos: null, unidades: null, germinador: null, siembra: null, cosecha: null };
 
 function renderConfiguracion() {
     const container = document.getElementById('configuracion-container');
@@ -381,6 +503,8 @@ function renderGerminador() {
     const productos = DB.get('productos');
     let lotes = DB.get('germinador').filter(l => l.estado !== 'FINALIZADO' && l.estado !== 'SEMBRADO');
     
+    lotes.sort((a, b) => new Date(a.fechaInicio) - new Date(b.fechaInicio));
+
     if (viewFilters.germinador !== 'ALL') {
         lotes = lotes.filter(l => l.productoId === viewFilters.germinador);
     }
@@ -419,7 +543,7 @@ function renderGerminador() {
                         <input type="date" id="germ-date" required value="${new Date().toISOString().split('T')[0]}">
                     </div>
                 </div>
-                <button type="submit" class="btn-primary">Iniciar Germinación</button>
+                <button type="submit" class="btn-primary" id="btn-submit-germinador">Iniciar Germinación</button>
             </form>
         </div>
         <div id="list-germinador">
@@ -440,7 +564,7 @@ function renderGerminador() {
                 <div class="card" ${retrasado ? 'style="border: 2px solid #d32f2f;"' : ''}>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
                         <strong>${prod.nombre}</strong>
-                        <span class="badge ${l.estado === 'EN_GERMINACION' ? 'badge-warning' : 'badge-success'}">${l.estado.replace('_', ' ')}</span>
+                        <div><span class="badge ${l.estado === 'EN_GERMINACION' ? 'badge-warning' : 'badge-success'}">${l.estado.replace('_', ' ')}</span> <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;" onclick="editGerminador('${l.id}')">✏️</button></div>
                     </div>
                     <p class="list-subtitle">Inicio: ${l.fechaInicio}</p>
                     <p class="list-subtitle">Semillas iniciales: ${l.cantidad}</p>
@@ -455,6 +579,65 @@ function renderGerminador() {
                 `;
             }).join('') || '<p style="text-align:center; color:#757575;">No hay lotes activos</p>'}
         </div>
+
+        <div class="card" id="reporte-germinacion-card" style="margin-top: 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+                <h3>Reporte de Germinación</h3>
+                <div>
+                    <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#2e7d32; margin-right:8px;" onclick="exportToExcel('tabla-reporte-germinacion', 'Reporte_Germinacion')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">table_view</i>Excel</button>
+                    <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#1565c0;" onclick="printReport('germinacion')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">print</i>Imprimir</button>
+                </div>
+            </div>
+            
+            <div style="overflow-x:auto;">
+                <table id="tabla-reporte-germinacion" style="width:100%; border-collapse: collapse; min-width: 500px; text-align:left;">
+                    <thead>
+                        <tr style="background-color: var(--primary-light); color: white;">
+                            <th style="padding: 8px; border: 1px solid #ccc;">Producto</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Semillas Iniciales</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Fecha Germinación</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Días en Germinación</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Comentario</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${lotes.map(l => {
+                            const prod = productos.find(p => p.id === l.productoId) || {nombre: 'Desconocido'};
+                            const today = new Date();
+                            today.setHours(0,0,0,0);
+                            
+                            const fInicio = new Date(l.fechaInicio);
+                            fInicio.setHours(0,0,0,0);
+                            const diasEnGerminacion = Math.floor((today.getTime() - fInicio.getTime()) / (1000 * 3600 * 24));
+                            
+                            const fSalida = new Date(l.fechaSalida);
+                            fSalida.setHours(0,0,0,0);
+                            const diffTime = today.getTime() - fSalida.getTime();
+                            const diasRetraso = Math.floor(diffTime / (1000 * 3600 * 24));
+                            
+                            let comentario = '';
+                            if (diasRetraso > 0) {
+                                comentario = `<span style="color:#d32f2f; font-weight:bold;">Se pasó del trasplante por ${diasRetraso} día(s)</span>`;
+                            } else if (diasRetraso === 0) {
+                                comentario = `<span style="color:#fbc02d; font-weight:bold;">¡Hoy es el día de trasplante!</span>`;
+                            } else {
+                                comentario = `En tiempo (Faltan ${Math.abs(diasRetraso)} días)`;
+                            }
+
+                            return `
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${prod.nombre}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${l.cantidad}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${l.fechaInicio}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${diasEnGerminacion >= 0 ? diasEnGerminacion : 0}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${comentario}</td>
+                                </tr>
+                            `;
+                        }).join('') || '<tr><td colspan="5" style="text-align:center; padding: 12px; color:#757575;">No hay registros de germinación activos.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     `;
 
     document.getElementById('form-germinador').addEventListener('submit', (e) => {
@@ -466,13 +649,23 @@ function renderGerminador() {
         fechaObj.setDate(fechaObj.getDate() + prod.diasGerminacion);
         let fechaSalida = fechaObj.toISOString().split('T')[0];
 
-        DB.add('germinador', {
-            productoId: prodId,
-            cantidad: parseInt(document.getElementById('germ-qty').value),
-            fechaInicio: document.getElementById('germ-date').value,
-            fechaSalida: fechaSalida,
-            estado: 'EN_GERMINACION' // EN_GERMINACION, LISTO, SEMBRADO
-        });
+        if (editingId.germinador) {
+            DB.update('germinador', editingId.germinador, {
+                productoId: prodId,
+                cantidad: parseInt(document.getElementById('germ-qty').value),
+                fechaInicio: document.getElementById('germ-date').value,
+                fechaSalida: fechaSalida
+            });
+            editingId.germinador = null;
+        } else {
+            DB.add('germinador', {
+                productoId: prodId,
+                cantidad: parseInt(document.getElementById('germ-qty').value),
+                fechaInicio: document.getElementById('germ-date').value,
+                fechaSalida: fechaSalida,
+                estado: 'EN_GERMINACION'
+            });
+        }
         renderGerminador();
     });
 }
@@ -490,6 +683,14 @@ function renderSiembra() {
     const campos = DB.get('campos');
     let siembras = DB.get('siembras').filter(s => s.estado !== 'FINALIZADA');
 
+    siembras.sort((a, b) => {
+        const loteA = DB.get('germinador').find(l => l.id === a.loteId);
+        const loteB = DB.get('germinador').find(l => l.id === b.loteId);
+        const dateA = loteA ? new Date(loteA.fechaInicio) : new Date(0);
+        const dateB = loteB ? new Date(loteB.fechaInicio) : new Date(0);
+        return dateA - dateB;
+    });
+
     if (viewFilters.siembra !== 'ALL') {
         siembras = siembras.filter(s => {
             const lote = DB.get('germinador').find(l => l.id === s.loteId);
@@ -500,8 +701,11 @@ function renderSiembra() {
     const selectOptions = '<option value="ALL">Todos los productos</option>' + 
                           productos.map(p => `<option value="${p.id}" ${viewFilters.siembra === p.id ? 'selected' : ''}>${p.nombre}</option>`).join('');
 
-    // Active ready batches for new planting form
-    const lotesListos = DB.get('germinador').filter(l => l.estado === 'LISTO' && (l.cantidad - (l.sembradas || 0) > 0));
+    // Active ready batches for new planting form, plus currently edited lote
+    const lotesListos = DB.get('germinador').filter(l => {
+        const isEdited = editingId.siembra && DB.get('siembras').find(x => x.id === editingId.siembra)?.loteId === l.id;
+        return isEdited || (l.estado === 'LISTO' && (l.cantidad - (l.sembradas || 0) > 0));
+    });
     const lotesOptions = lotesListos.map(l => {
         const p = productos.find(x => x.id === l.productoId) || {nombre: ''};
         return `<option value="${l.id}">${p.nombre} (Disp: ${l.cantidad - (l.sembradas || 0)})</option>`;
@@ -522,24 +726,20 @@ function renderSiembra() {
             <h3>Nueva Siembra (Trasplante)</h3>
             <form id="form-siembra">
                 <div class="form-group">
-                    <label>Lote Listo</label>
-                    <select id="siem-lote" required><option value="">Seleccione...</option>${lotesOptions}</select>
-                </div>
-                <div class="form-group">
-                    <label>Campo Destino</label>
+                    <label>Campo Destino (Aplica para todos los lotes)</label>
                     <select id="siem-campo" required><option value="">Seleccione...</option>${camposOptions}</select>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Plantas Sembradas</label>
-                        <input type="number" id="siem-qty" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Fecha Siembra</label>
-                        <input type="date" id="siem-date" required value="${new Date().toISOString().split('T')[0]}">
-                    </div>
+                <div class="form-group">
+                    <label>Fecha Siembra</label>
+                    <input type="date" id="siem-date" required value="${new Date().toISOString().split('T')[0]}">
                 </div>
-                <button type="submit" class="btn-primary">Registrar Siembra</button>
+                
+                <label style="font-weight:bold; margin-top:12px; display:block;">Lotes a Sembrar</label>
+                <div id="siem-lotes-container"></div>
+                <button type="button" id="btn-add-lote" class="btn-secondary" style="margin-bottom:16px; font-size:0.8rem; padding:4px 8px; background:#e0e0e0; color:#333; border:none; border-radius:4px; cursor:pointer;">+ Agregar otro lote</button>
+
+                <br/>
+                <button type="submit" class="btn-primary" id="btn-submit-siembra">Registrar Siembra</button>
             </form>
         </div>
         <div id="list-siembras">
@@ -567,7 +767,11 @@ function renderSiembra() {
                 <div class="card" ${listaParaCosecha ? 'style="border: 2px solid #d32f2f;"' : ''}>
                     <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
                         <strong>${prod.nombre} - ${campo.nombre}</strong>
-                        <span class="badge ${s.estado === 'CRECIENDO' ? 'badge-info' : 'badge-warning'}">${s.estado}</span>
+                        <div>
+                            <span class="badge ${s.estado === 'CRECIENDO' ? 'badge-info' : 'badge-warning'}">${s.estado}</span> 
+                            <button class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;" onclick="editSiembra('${s.id}')" title="Editar">✏️</button>
+                            <button class="btn-danger" style="padding:4px 8px; font-size:0.8rem; margin-left:4px; background:#d32f2f; color:white; border:none; border-radius:4px; cursor:pointer;" onclick="anularSiembra('${s.id}')" title="Anular Siembra">🗑️</button>
+                        </div>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px; margin-bottom:8px;">
                         <p class="list-subtitle">Sembradas: <strong>${s.cantidad}</strong></p>
@@ -592,54 +796,200 @@ function renderSiembra() {
                 `;
             }).join('') || '<p style="text-align:center; color:#757575;">No hay siembras activas</p>'}
         </div>
+
+        <div class="card" id="reporte-siembra-card" style="margin-top: 16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+                <h3>Reporte de Siembra</h3>
+                <div>
+                    <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#2e7d32; margin-right:8px;" onclick="exportToExcel('tabla-reporte-siembra', 'Reporte_Siembra')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">table_view</i>Excel</button>
+                    <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#1565c0;" onclick="printReport('siembra')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">print</i>Imprimir</button>
+                </div>
+            </div>
+            
+            <div style="overflow-x:auto;">
+                <table id="tabla-reporte-siembra" style="width:100%; border-collapse: collapse; min-width: 500px; text-align:left;">
+                    <thead>
+                        <tr style="background-color: var(--primary-light); color: white;">
+                            <th style="padding: 8px; border: 1px solid #ccc;">Producto</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Campo</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Cant. Sembrada</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Fecha Siembra</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Días en Campo</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Cosecha Estimada</th>
+                            <th style="padding: 8px; border: 1px solid #ccc;">Comentario</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${siembras.map(s => {
+                            const lote = DB.get('germinador').find(l => l.id === s.loteId) || {};
+                            const prod = productos.find(p => p.id === lote.productoId) || {nombre: 'Desc'};
+                            const campo = campos.find(c => c.id === s.campoId) || {nombre: 'Desc'};
+                            
+                            const today = new Date();
+                            today.setHours(0,0,0,0);
+                            
+                            const fSiembra = new Date(s.fechaSiembra);
+                            fSiembra.setMinutes(fSiembra.getMinutes() + fSiembra.getTimezoneOffset());
+                            fSiembra.setHours(0,0,0,0);
+                            
+                            const fCosecha = new Date(s.fechaCosecha);
+                            fCosecha.setMinutes(fCosecha.getMinutes() + fCosecha.getTimezoneOffset());
+                            fCosecha.setHours(0,0,0,0);
+                            
+                            const diasPasados = Math.floor((today.getTime() - fSiembra.getTime()) / (1000 * 3600 * 24));
+                            const listaParaCosecha = today.getTime() >= fCosecha.getTime();
+                            
+                            let comentario = '';
+                            if (listaParaCosecha && s.estado === 'CRECIENDO') {
+                                const diasRetraso = Math.floor((today.getTime() - fCosecha.getTime()) / (1000 * 3600 * 24));
+                                comentario = `<span style="color:#d32f2f; font-weight:bold;">Atraso en cosecha de ${diasRetraso} día(s)</span>`;
+                            } else if (s.estado === 'CRECIENDO') {
+                                const diasFaltantes = Math.floor((fCosecha.getTime() - today.getTime()) / (1000 * 3600 * 24));
+                                comentario = `En tiempo (Faltan ${diasFaltantes} días)`;
+                            } else {
+                                comentario = s.estado;
+                            }
+
+                            return `
+                                <tr>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${prod.nombre}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${campo.nombre}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${s.cantidad}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${s.fechaSiembra}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${diasPasados >= 0 ? diasPasados : 0}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${s.fechaCosecha}</td>
+                                    <td style="padding: 8px; border: 1px solid #ccc;">${comentario}</td>
+                                </tr>
+                            `;
+                        }).join('') || '<tr><td colspan="7" style="text-align:center; padding: 12px; color:#757575;">No hay registros de siembra activos.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     `;
+
+    window.addLoteRow = function(loteId = '', qty = '') {
+        const row = document.createElement('div');
+        row.className = 'form-row siem-lote-row';
+        row.style.marginBottom = '8px';
+        row.style.alignItems = 'center';
+        row.innerHTML = `
+            <div class="form-group" style="flex:2; margin-bottom:0;">
+                <select class="siem-lote-select" required>
+                    <option value="">Seleccione lote...</option>
+                    ${lotesOptions}
+                </select>
+            </div>
+            <div class="form-group" style="flex:1; margin-bottom:0; margin-left:8px;">
+                <input type="number" class="siem-qty-input" placeholder="Plantas" required value="${qty}">
+            </div>
+            <button type="button" class="btn-danger btn-remove-lote" style="padding:4px 8px; margin-left:8px; height:fit-content; background:#d32f2f; color:white; border:none; border-radius:4px; cursor:pointer;">X</button>
+        `;
+        row.querySelector('.siem-lote-select').value = loteId;
+        
+        row.querySelector('.btn-remove-lote').addEventListener('click', () => {
+            if (document.querySelectorAll('.siem-lote-row').length > 1) {
+                row.remove();
+            } else {
+                alert('Debe haber al menos un lote.');
+            }
+        });
+        
+        const containerElem = document.getElementById('siem-lotes-container');
+        if (containerElem) containerElem.appendChild(row);
+    };
+
+    // Add first row if not editing
+    if (!editingId.siembra) {
+        window.addLoteRow();
+    }
+    
+    document.getElementById('btn-add-lote').addEventListener('click', () => window.addLoteRow());
 
     document.getElementById('form-siembra').addEventListener('submit', (e) => {
         e.preventDefault();
-        const loteId = document.getElementById('siem-lote').value;
-        const lote = DB.get('germinador').find(l => l.id === loteId);
-        const prod = productos.find(p => p.id === lote.productoId);
         
-        const qtyToPlant = parseInt(document.getElementById('siem-qty').value);
-        const disponibles = lote.cantidad - (lote.sembradas || 0);
-
-        if (qtyToPlant > disponibles) {
-            alert('Solo tienes ' + disponibles + ' plantas disponibles en este lote.');
-            return;
-        }
-
+        const campoId = document.getElementById('siem-campo').value;
         const plantingDateStr = document.getElementById('siem-date').value;
-        let fechaObj = new Date(plantingDateStr);
-        fechaObj.setDate(fechaObj.getDate() + prod.diasCosecha);
-        let fechaCosecha = fechaObj.toISOString().split('T')[0];
-
-        // Calcular retraso
-        const fechaRealSiembra = new Date(plantingDateStr);
-        const fechaEstimadaSalida = new Date(lote.fechaSalida);
-        const diffTime = fechaRealSiembra.getTime() - fechaEstimadaSalida.getTime();
-        const retrasoDias = Math.floor(diffTime / (1000 * 3600 * 24));
-
-        DB.add('siembras', {
-            loteId: loteId,
-            campoId: document.getElementById('siem-campo').value,
-            cantidad: qtyToPlant,
-            fechaSiembra: plantingDateStr,
-            fechaCosecha: fechaCosecha,
-            retrasoDias: retrasoDias,
-            estado: 'CRECIENDO'
+        const rows = document.querySelectorAll('.siem-lote-row');
+        
+        let records = [];
+        let hasError = false;
+        
+        // Validation
+        rows.forEach(row => {
+            const loteId = row.querySelector('.siem-lote-select').value;
+            const qtyToPlant = parseInt(row.querySelector('.siem-qty-input').value);
+            
+            const lote = DB.get('germinador').find(l => l.id === loteId);
+            const prod = productos.find(p => p.id === lote.productoId);
+            const disponibles = lote.cantidad - (lote.sembradas || 0);
+            
+            let qtyDiff = qtyToPlant;
+            if (editingId.siembra) {
+                let siembraPrevia = DB.get('siembras').find(x => x.id === editingId.siembra);
+                qtyDiff = qtyToPlant - siembraPrevia.cantidad;
+            }
+            
+            if (qtyDiff > disponibles) {
+                alert(`Solo tienes ${disponibles} plantas extra disponibles en el lote de ${prod.nombre}.`);
+                hasError = true;
+            }
+            
+            records.push({ loteId, qtyToPlant, lote, prod, qtyDiff });
         });
+        
+        if (hasError) return;
+        
+        // Processing
+        records.forEach(rec => {
+            const { loteId, qtyToPlant, lote, prod, qtyDiff } = rec;
+            
+            let fechaObj = new Date(plantingDateStr);
+            fechaObj.setDate(fechaObj.getDate() + prod.diasCosecha);
+            let fechaCosecha = fechaObj.toISOString().split('T')[0];
 
-        // Descontar del lote germinador
-        let sembradasActuales = (lote.sembradas || 0) + qtyToPlant;
-        let nuevoEstado = lote.estado;
-        if (sembradasActuales >= lote.cantidad) {
-            nuevoEstado = 'SEMBRADO'; // Ya no está disponible
-        }
-
-        DB.update('germinador', loteId, { 
-            sembradas: sembradasActuales,
-            estado: nuevoEstado 
+            const fechaRealSiembra = new Date(plantingDateStr);
+            const fechaEstimadaSalida = new Date(lote.fechaSalida);
+            const diffTime = fechaRealSiembra.getTime() - fechaEstimadaSalida.getTime();
+            const retrasoDias = Math.floor(diffTime / (1000 * 3600 * 24));
+            
+            if (editingId.siembra) {
+                DB.update('siembras', editingId.siembra, {
+                    loteId: loteId,
+                    campoId: campoId,
+                    cantidad: qtyToPlant,
+                    fechaSiembra: plantingDateStr,
+                    fechaCosecha: fechaCosecha,
+                    retrasoDias: retrasoDias
+                });
+                
+                let sembradasActuales = (lote.sembradas || 0) + qtyDiff;
+                let nuevoEstado = lote.estado;
+                if (sembradasActuales >= lote.cantidad) nuevoEstado = 'SEMBRADO';
+                else if (sembradasActuales < lote.cantidad && lote.estado === 'SEMBRADO') nuevoEstado = 'LISTO';
+                
+                DB.update('germinador', loteId, { sembradas: sembradasActuales, estado: nuevoEstado });
+            } else {
+                DB.add('siembras', {
+                    loteId: loteId,
+                    campoId: campoId,
+                    cantidad: qtyToPlant,
+                    fechaSiembra: plantingDateStr,
+                    fechaCosecha: fechaCosecha,
+                    retrasoDias: retrasoDias,
+                    estado: 'CRECIENDO'
+                });
+                
+                let sembradasActuales = (lote.sembradas || 0) + qtyToPlant;
+                let nuevoEstado = lote.estado;
+                if (sembradasActuales >= lote.cantidad) nuevoEstado = 'SEMBRADO';
+                
+                DB.update('germinador', loteId, { sembradas: sembradasActuales, estado: nuevoEstado });
+            }
         });
+        
+        if (editingId.siembra) editingId.siembra = null;
         
         renderSiembra();
     });
@@ -657,6 +1007,15 @@ window.iniciarCosecha = function(id) {
 // ==========================================
 function renderCosecha() {
     let siembrasEnCosecha = DB.get('siembras').filter(s => s.estado === 'EN_COSECHA');
+    
+    siembrasEnCosecha.sort((a, b) => {
+        const loteA = DB.get('germinador').find(l => l.id === a.loteId);
+        const loteB = DB.get('germinador').find(l => l.id === b.loteId);
+        const dateA = loteA ? new Date(loteA.fechaInicio) : new Date(0);
+        const dateB = loteB ? new Date(loteB.fechaInicio) : new Date(0);
+        return dateA - dateB;
+    });
+
     const productos = DB.get('productos');
     const campos = DB.get('campos');
     const unidades = DB.get('unidades');
@@ -740,7 +1099,7 @@ function renderCosecha() {
                                 <input type="date" id="corte-date-${s.id}" required value="${new Date().toISOString().split('T')[0]}">
                             </div>
                         </div>
-                        <button type="submit" class="btn-primary" style="padding:8px; font-size:0.9rem;">Guardar Registro</button>
+                        <button type="submit" class="btn-primary" id="btn-submit-corte-${s.id}" style="padding:8px; font-size:0.9rem;">Guardar Registro</button>
                     </form>
                 </div>
             </div>
@@ -754,14 +1113,28 @@ window.registrarCorte = function(e, siembraId) {
     const qty = parseFloat(document.getElementById(`corte-qty-${siembraId}`).value);
     const price = parseFloat(document.getElementById(`corte-price-${siembraId}`).value || 0);
     
-    DB.add('registrosCosecha', {
-        siembraId: siembraId,
-        cantidad: qty,
-        unidadId: document.getElementById(`corte-unit-${siembraId}`).value,
-        precio: price,
-        total: qty * price,
-        fecha: document.getElementById(`corte-date-${siembraId}`).value
-    });
+    const unitId = document.getElementById(`corte-unit-${siembraId}`).value;
+    const dateVal = document.getElementById(`corte-date-${siembraId}`).value;
+    
+    if (editingId.cosecha) {
+        DB.update('registrosCosecha', editingId.cosecha, {
+            cantidad: qty,
+            unidadId: unitId,
+            precio: price,
+            total: qty * price,
+            fecha: dateVal
+        });
+        editingId.cosecha = null;
+    } else {
+        DB.add('registrosCosecha', {
+            siembraId: siembraId,
+            cantidad: qty,
+            unidadId: unitId,
+            precio: price,
+            total: qty * price,
+            fecha: dateVal
+        });
+    }
     renderCosecha();
 }
 
@@ -795,7 +1168,7 @@ function renderAlertas() {
         <div id="list-alertas">
     `;
 
-    let alertasArray = [];
+    let alertasObj = [];
 
     // 1. Frecuencia Germinación
     if (viewFiltersAlertas === 'ALL' || viewFiltersAlertas === 'FREQ') {
@@ -806,13 +1179,15 @@ function renderAlertas() {
                 const ultimoLote = lotesProd.length > 0 ? lotesProd[0] : null;
 
                 if (!ultimoLote) {
-                    alertasArray.push(`
+                    alertasObj.push({
+                        date: new Date(0),
+                        html: `
                         <div class="card" style="border-left: 4px solid #d32f2f;">
                             <h4 style="color:#c62828; margin-bottom:4px;">Falta Germinar: ${prod.nombre}</h4>
                             <p class="list-subtitle">Nunca se ha registrado una germinación para este producto.</p>
                             <p class="list-subtitle" style="margin-top:4px; font-weight:bold;">Frecuencia exigida: Cada ${prod.frecuenciaGerminacion} días.</p>
                         </div>
-                    `);
+                    `});
                 } else {
                     const fInicio = new Date(ultimoLote.fechaInicio);
                     fInicio.setHours(0,0,0,0);
@@ -821,22 +1196,26 @@ function renderAlertas() {
                     
                     if (diasPasados > prod.frecuenciaGerminacion) {
                         const retraso = diasPasados - prod.frecuenciaGerminacion;
-                        alertasArray.push(`
+                        alertasObj.push({
+                            date: fInicio,
+                            html: `
                             <div class="card" style="border-left: 4px solid #d32f2f;">
                                 <h4 style="color:#c62828; margin-bottom:4px;">Retraso Nueva Germinación: ${prod.nombre}</h4>
                                 <p class="list-subtitle">La última germinación fue hace <strong>${diasPasados} días</strong> (${ultimoLote.fechaInicio}).</p>
                                 <p class="list-subtitle" style="margin-top:4px;">Frecuencia exigida: Cada ${prod.frecuenciaGerminacion} días.</p>
                                 <div style="background-color: #ffebee; color: #c62828; padding: 4px 8px; border-radius: 4px; margin-top: 8px; font-size: 0.85rem; font-weight: bold; display:inline-block;">¡Retraso de ${retraso} día(s)!</div>
                             </div>
-                        `);
+                        `});
                     } else {
                         const faltan = prod.frecuenciaGerminacion - diasPasados;
-                        alertasArray.push(`
+                        alertasObj.push({
+                            date: fInicio,
+                            html: `
                             <div class="card" style="border-left: 4px solid #fbc02d;">
                                 <h4 style="color:#f57f17; margin-bottom:4px;">Próxima Germinación: ${prod.nombre}</h4>
                                 <p class="list-subtitle">Última hace ${diasPasados} días. Faltan <strong>${faltan} días</strong> para la siguiente ronda.</p>
                             </div>
-                        `);
+                        `});
                     }
                 }
             }
@@ -854,23 +1233,27 @@ function renderAlertas() {
                 const diasRetraso = Math.floor(diffTime / (1000 * 3600 * 24));
 
                 if (diasRetraso > 0) {
-                    alertasArray.push(`
+                    alertasObj.push({
+                        date: new Date(l.fechaInicio),
+                        html: `
                         <div class="card" style="border-left: 4px solid #d32f2f;">
                             <h4 style="color:#c62828; margin-bottom:4px;">Retraso Trasplante: ${prod.nombre}</h4>
                             <p class="list-subtitle">Lote iniciado el ${l.fechaInicio}. Debió salir el <strong>${l.fechaSalida}</strong>.</p>
                             <p class="list-subtitle" style="margin-top:4px;">Semillas iniciales: ${l.cantidad} | Disponibles: ${l.cantidad - (l.sembradas || 0)}</p>
                             <div style="background-color: #ffebee; color: #c62828; padding: 4px 8px; border-radius: 4px; margin-top: 8px; font-size: 0.85rem; font-weight: bold; display:inline-block;">¡Lleva ${diasRetraso} día(s) en espera!</div>
                         </div>
-                    `);
+                    `});
                 }
             }
         });
     }
 
-    if (alertasArray.length === 0) {
+    alertasObj.sort((a, b) => a.date - b.date);
+
+    if (alertasObj.length === 0) {
         html += '<p style="text-align:center; color:#757575; padding: 12px;">No hay alertas pendientes en este momento. ¡Todo está al día!</p>';
     } else {
-        html += alertasArray.join('');
+        html += alertasObj.map(a => a.html).join('');
     }
 
     html += '</div>';
@@ -945,11 +1328,23 @@ function renderDashboard() {
         <div class="card" id="proyecciones-card" style="margin-top: 16px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
                 <h3>Proyecciones de Cosecha</h3>
-                <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#1565c0;" onclick="printReport('proyecciones')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">print</i>Imprimir</button>
+                <div>
+                    <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#2e7d32; margin-right:8px;" onclick="exportToExcel('tabla-proyecciones', 'Proyeccion_Cosecha')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">table_view</i>Excel</button>
+                    <button class="btn-primary no-print" style="padding:6px 12px; font-size:0.8rem; background-color:#1565c0;" onclick="printReport('proyecciones')"><i class="material-icons" style="font-size:1rem; vertical-align:middle; margin-right:4px;">print</i>Imprimir</button>
+                </div>
             </div>
             <p class="list-subtitle no-print" style="margin-bottom:12px;">Proyección basada en las siembras activas en el campo y el rendimiento configurado por producto.</p>
+            
+            <div class="form-group no-print" style="max-width: 300px; margin-bottom: 16px;">
+                <label>Filtrar por producto</label>
+                <select onchange="setFilterProyeccion(this.value)">
+                    <option value="ALL">Todos los productos</option>
+                    ${productos.map(p => `<option value="${p.id}" ${viewFilters.proyeccion === p.id ? 'selected' : ''}>${p.nombre}</option>`).join('')}
+                </select>
+            </div>
+
             <div style="overflow-x:auto;">
-                <table style="width:100%; border-collapse: collapse; min-width: 500px; text-align:left;">
+                <table id="tabla-proyecciones" style="width:100%; border-collapse: collapse; min-width: 500px; text-align:left;">
                     <thead>
                         <tr style="background-color: var(--primary-light); color: white;">
                             <th style="padding: 8px; border: 1px solid #ccc;">Producto</th>
@@ -962,7 +1357,23 @@ function renderDashboard() {
                     <tbody>
     `;
 
-    const activasArr = siembras.filter(s => s.estado !== 'FINALIZADA');
+    let activasArr = siembras.filter(s => s.estado !== 'FINALIZADA');
+    
+    if (viewFilters.proyeccion !== 'ALL') {
+        activasArr = activasArr.filter(s => {
+            const lote = DB.get('germinador').find(l => l.id === s.loteId);
+            return lote && lote.productoId === viewFilters.proyeccion;
+        });
+    }
+    
+    activasArr.sort((a, b) => {
+        const loteA = DB.get('germinador').find(l => l.id === a.loteId);
+        const loteB = DB.get('germinador').find(l => l.id === b.loteId);
+        const dateA = loteA ? new Date(loteA.fechaInicio) : new Date(0);
+        const dateB = loteB ? new Date(loteB.fechaInicio) : new Date(0);
+        return dateA - dateB;
+    });
+
     if (activasArr.length === 0) {
         html += `<tr><td colspan="5" style="padding: 12px; text-align:center; color:#757575;">No hay siembras activas en campo para proyectar.</td></tr>`;
     } else {
@@ -1075,7 +1486,7 @@ function renderDashboard() {
                             return `<div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px; padding:4px 0; border-bottom:1px solid #f0f0f0;">
                                 <span>${r.fecha}</span>
                                 <span>${r.cantidad} ${uni.abrev}</span>
-                                <span style="color:var(--primary-dark)">$${r.total}</span>
+                                <span style="color:var(--primary-dark)">${r.total} <button class="btn-primary no-print" style="padding:2px 4px; font-size:0.7rem; margin-left:4px;" onclick="editRegistroCosecha('${r.id}')">✏️</button></span>
                             </div>`;
                         }).join('')}
                     </div>
@@ -1118,14 +1529,38 @@ window.renderGantt = function() {
         return;
     }
 
-    let siembras = DB.get('siembras').filter(s => s.estado === 'FINALIZADA');
-    
+    // Combinaremos siembras y lotes en germinación sin sembrar completamente
+    let siembras = DB.get('siembras');
+    let germinadores = DB.get('germinador').filter(l => l.estado !== 'FINALIZADO' && l.estado !== 'SEMBRADO' && (l.cantidad - (l.sembradas || 0)) > 0);
+
+    let itemsToPlot = [];
+
+    siembras.forEach(s => {
+        itemsToPlot.push({ type: 'siembra', data: s });
+    });
+
+    germinadores.forEach(l => {
+        itemsToPlot.push({ type: 'germinacion', data: l });
+    });
+
     if (productVal !== 'ALL') {
-        siembras = siembras.filter(s => {
-            const lote = DB.get('germinador').find(l => l.id === s.loteId);
-            return lote && lote.productoId === productVal;
+        itemsToPlot = itemsToPlot.filter(item => {
+            if (item.type === 'siembra') {
+                const lote = DB.get('germinador').find(l => l.id === item.data.loteId);
+                return lote && lote.productoId === productVal;
+            } else {
+                return item.data.productoId === productVal;
+            }
         });
     }
+
+    itemsToPlot.sort((a, b) => {
+        const loteA = a.type === 'siembra' ? DB.get('germinador').find(l => l.id === a.data.loteId) : a.data;
+        const loteB = b.type === 'siembra' ? DB.get('germinador').find(l => l.id === b.data.loteId) : b.data;
+        const dateA = loteA ? new Date(loteA.fechaInicio).getTime() : 0;
+        const dateB = loteB ? new Date(loteB.fechaInicio).getTime() : 0;
+        return dateA - dateB;
+    });
 
     const productos = DB.get('productos');
     const registros = DB.get('registrosCosecha');
@@ -1142,32 +1577,65 @@ window.renderGantt = function() {
         return { left, width, drawS, drawE };
     };
 
-    siembras.forEach(s => {
-        const lote = DB.get('germinador').find(l => l.id === s.loteId) || {};
-        const prod = productos.find(p => p.id === lote.productoId) || {nombre: 'Desconocido'};
-        const campo = DB.get('campos').find(c => c.id === s.campoId) || {nombre: ''};
-        const recs = registros.filter(r => r.siembraId === s.id);
-        const sortedRecs = [...recs].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
-        
-        let dGermInicio = lote.fechaInicio ? new Date(lote.fechaInicio).getTime() : null;
-        let dSiembra = s.fechaSiembra ? new Date(s.fechaSiembra).getTime() : null;
-        
-        let dCosInicio = s.fechaInicioCosecha ? new Date(s.fechaInicioCosecha).getTime() : null;
-        let dCosFin = s.fechaFinCosecha ? new Date(s.fechaFinCosecha).getTime() : null;
+    itemsToPlot.forEach(item => {
+        let dGermInicio = null, dSiembra = null, dCosInicio = null, dCosFin = null;
+        let prod, campoInfo, retrasoStr = "", diasCosecha = 1, isProjected = false;
 
-        if (!dCosInicio && sortedRecs.length > 0) dCosInicio = new Date(sortedRecs[0].fecha).getTime();
-        if (sortedRecs.length > 0) dCosFin = new Date(sortedRecs[sortedRecs.length-1].fecha).getTime();
+        if (item.type === 'siembra') {
+            const s = item.data;
+            const lote = DB.get('germinador').find(l => l.id === s.loteId) || {};
+            prod = productos.find(p => p.id === lote.productoId) || {nombre: 'Desconocido', diasCosecha: 0};
+            campoInfo = (DB.get('campos').find(c => c.id === s.campoId) || {nombre: ''}).nombre;
+            
+            const recs = registros.filter(r => r.siembraId === s.id);
+            const sortedRecs = [...recs].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+            
+            dGermInicio = lote.fechaInicio ? new Date(lote.fechaInicio).getTime() : null;
+            dSiembra = s.fechaSiembra ? new Date(s.fechaSiembra).getTime() : null;
+            
+            dCosInicio = s.fechaInicioCosecha ? new Date(s.fechaInicioCosecha).getTime() : null;
+            dCosFin = s.fechaFinCosecha ? new Date(s.fechaFinCosecha).getTime() : null;
 
-        if(!dCosInicio) dCosInicio = dSiembra;
-        if(!dCosFin) dCosFin = dCosInicio;
+            if (!dCosInicio && sortedRecs.length > 0) dCosInicio = new Date(sortedRecs[0].fecha).getTime();
+            if (sortedRecs.length > 0) dCosFin = new Date(sortedRecs[sortedRecs.length-1].fecha).getTime();
 
-        let retrasoStr = "";
-        if (s.retrasoDias > 0) retrasoStr = "Retraso: " + s.retrasoDias + "d";
-        else if (s.retrasoDias < 0) retrasoStr = "Anticipo: " + Math.abs(s.retrasoDias) + "d";
-        else retrasoStr = "A tiempo";
+            if (!dCosInicio) {
+                // If it's not finalized and has no harvest records, use the projected harvest date
+                dCosInicio = s.fechaCosecha ? new Date(s.fechaCosecha).getTime() : dSiembra;
+                isProjected = true;
+            }
+            if (!dCosFin) {
+                // Project a 14-day harvest window if not finished
+                dCosFin = dCosInicio + (1000 * 3600 * 24 * 14);
+            }
 
-        let diasCosecha = Math.floor((dCosFin - dCosInicio) / (1000 * 3600 * 24));
-        if (diasCosecha < 1) diasCosecha = 1;
+            if (s.retrasoDias > 0) retrasoStr = "Retraso: " + s.retrasoDias + "d";
+            else if (s.retrasoDias < 0) retrasoStr = "Anticipo: " + Math.abs(s.retrasoDias) + "d";
+            else retrasoStr = "A tiempo";
+
+            diasCosecha = Math.floor((dCosFin - dCosInicio) / (1000 * 3600 * 24));
+            if (diasCosecha < 1) diasCosecha = 1;
+
+        } else {
+            // Germinacion solo
+            const l = item.data;
+            prod = productos.find(p => p.id === l.productoId) || {nombre: 'Desconocido'};
+            campoInfo = "En Germinador";
+            dGermInicio = l.fechaInicio ? new Date(l.fechaInicio).getTime() : null;
+            dSiembra = l.fechaSalida ? new Date(l.fechaSalida).getTime() : null;
+            
+            const today = new Date().getTime();
+            if (today > dSiembra) {
+                const diasRetraso = Math.floor((today - dSiembra) / (1000 * 3600 * 24));
+                retrasoStr = "Atrasado " + diasRetraso + "d";
+            } else {
+                retrasoStr = "Aún germinando";
+            }
+            
+            // No hay siembra ni cosecha aún
+            dCosInicio = null;
+            dCosFin = null;
+        }
 
         if (stage === 'ALL') {
             const pGerm = calcPos(dGermInicio, dSiembra);
@@ -1221,7 +1689,7 @@ window.renderGantt = function() {
                 html += `
                     <div style="margin-bottom:28px; font-size:0.8rem; border-bottom:1px solid #eee; padding-bottom:8px;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                            <strong>${prod.nombre} - ${campo.nombre}</strong>
+                            <strong>${prod.nombre} - ${campoInfo}</strong>
                             <span style="color:var(--text-muted); font-size:0.7rem;">${new Date(globalStart).toISOString().split('T')[0]} a ${new Date(globalEnd).toISOString().split('T')[0]}</span>
                         </div>
                         <div style="background:#e0e0e0; height:16px; border-radius:4px; position:relative; margin-bottom:12px;">
@@ -1269,7 +1737,7 @@ window.renderGantt = function() {
                 html += `
                     <div style="margin-bottom:28px; font-size:0.8rem;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
-                            <strong>${prod.nombre} - ${campo.nombre} <span style="color:var(--text-muted); font-weight:normal;">${extraTitle ? '('+extraTitle+')' : ''}</span></strong>
+                            <strong>${prod.nombre} - ${campoInfo} <span style="color:var(--text-muted); font-weight:normal;">${extraTitle ? '('+extraTitle+')' : ''}</span></strong>
                             <span style="color:var(--text-muted); font-size:0.7rem;">${new Date(p.drawS).toISOString().split('T')[0]} a ${new Date(p.drawE).toISOString().split('T')[0]}</span>
                         </div>
                         <div style="background:#e0e0e0; height:14px; border-radius:4px; position:relative; margin-bottom:12px;">

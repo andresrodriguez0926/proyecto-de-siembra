@@ -274,4 +274,12 @@ button.btn-danger {
     body.print-proyecciones #gantt-card {
         display: none !important;
     }
+    body.print-germinacion #germinador-container > .card:not(#reporte-germinacion-card),
+    body.print-germinacion #list-germinador {
+        display: none !important;
+    }
+    body.print-siembra #siembra-container > .card:not(#reporte-siembra-card),
+    body.print-siembra #list-siembras {
+        display: none !important;
+    }
 }

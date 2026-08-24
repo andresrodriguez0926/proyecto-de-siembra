@@ -7,12 +7,16 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <!-- PWA -->
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="agro-manifest.json">
+    <link rel="icon" type="image/png" href="logo-tractor-192.png">
     <meta name="theme-color" content="#2e7d32">
 </head>
 <body>
     <header id="main-header" style="display:flex; justify-content:space-between; align-items:center;">
-        <h1 id="page-title">Dashboard</h1>
+        <div style="display:flex; align-items:center;">
+            <img src="logo-tractor-192.png" alt="Logo" style="height:32px; margin-right:12px; border-radius:4px;">
+            <h1 id="page-title">Dashboard</h1>
+        </div>
         <div>
             <button class="nav-btn no-print" onclick="logout()" style="color:white; background:none; border:none; cursor:pointer; margin-right: 12px;" title="Cerrar Sesión">
                 <i class="material-icons">logout</i>
@@ -27,6 +31,9 @@
         <!-- Login -->
         <section id="view-login" class="view" style="justify-content:center; align-items:center; height:100vh; flex-direction:column; background-color: var(--primary-light);">
             <div class="card" style="width:90%; max-width:400px; padding:32px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <div style="text-align:center; margin-bottom:16px;">
+                    <img src="logo-tractor-192.png" alt="Tractor Logo" style="width:80px; height:auto;">
+                </div>
                 <h2 style="text-align:center; color:var(--primary-dark); margin-bottom:24px;">Iniciar Sesión</h2>
                 <form id="form-login">
                     <div class="form-group">
@@ -103,6 +110,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
