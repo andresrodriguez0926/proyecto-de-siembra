@@ -121,6 +121,14 @@ window.anularSiembra = function(id) {
     renderSiembra();
 };
 
+window.deleteRegistroCosecha = function(id) {
+    if (confirm('¿Estás seguro de que deseas eliminar este registro de venta?')) {
+        DB.remove('registrosCosecha', id);
+        renderCosecha();
+        renderDashboard(); // To update the totals
+    }
+};
+
 window.editRegistroCosecha = function(id) {
     const item = DB.get('registrosCosecha').find(i => i.id === id);
     if (!item) return;
@@ -1217,6 +1225,27 @@ function renderCosecha() {
                         </div>
                         <button type="submit" class="btn-primary" id="btn-submit-corte-${s.id}" style="padding:8px; font-size:0.9rem;">Guardar Registro</button>
                     </form>
+                    
+                    <div style="margin-top: 16px; border-top: 1px solid #ddd; padding-top: 12px;">
+                        <h4 style="font-size:0.9rem; margin-bottom:8px; color: var(--primary-dark);">Ventas Registradas</h4>
+                        ${recs.length === 0 ? '<p style="font-size:0.8rem; color:#757575;">No hay ventas registradas aún.</p>' : 
+                            recs.map(r => {
+                                const uni = unidades.find(u => u.id === r.unidadId) || {};
+                                return `
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:white; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:6px; font-size:0.85rem;">
+                                    <div>
+                                        <strong>${r.fecha}</strong> - ${r.cantidad} ${uni.abrev || uni.nombre} x $${r.precio} = <strong style="color:var(--primary-dark)">$${r.total}</strong>
+                                        ${r.notas ? `<br/><span style="color:#666; font-style:italic;">${r.notas}</span>` : ''}
+                                    </div>
+                                    <div>
+                                        <button type="button" class="btn-primary" style="padding:4px 8px; font-size:0.8rem; margin-right:4px;" onclick="editRegistroCosecha('${r.id}')">✏️</button>
+                                        <button type="button" class="btn-danger" style="padding:4px 8px; font-size:0.8rem;" onclick="deleteRegistroCosecha('${r.id}')">X</button>
+                                    </div>
+                                </div>
+                                `;
+                            }).join('')
+                        }
+                    </div>
                 </div>
             </div>
             `;
