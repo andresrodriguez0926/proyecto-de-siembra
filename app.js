@@ -1488,22 +1488,7 @@ function renderDashboard() {
     if (activasArr.length === 0) {
         html += `<tr><td colspan="5" style="padding: 12px; text-align:center; color:#757575;">No hay siembras activas en campo para proyectar.</td></tr>`;
     } else {
-                let activasArrSemanales = siembras.filter(s => s.estado !== 'FINALIZADA');
-        if (viewFilters.semanales !== 'ALL') {
-            activasArrSemanales = activasArrSemanales.filter(s => {
-                const lote = DB.get('germinador').find(l => l.id === s.loteId);
-                return lote && lote.productoId === viewFilters.semanales;
-            });
-        }
-        activasArrSemanales.sort((a, b) => {
-            const loteA = DB.get('germinador').find(l => l.id === a.loteId);
-            const loteB = DB.get('germinador').find(l => l.id === b.loteId);
-            const dateA = loteA ? new Date(loteA.fechaInicio) : new Date(0);
-            const dateB = loteB ? new Date(loteB.fechaInicio) : new Date(0);
-            return dateA - dateB;
-        });
-
-        activasArrSemanales.forEach(s => {
+        activasArr.forEach(s => {
             const lote = DB.get('germinador').find(l => l.id === s.loteId);
             if(lote) {
                 const prod = productos.find(p => p.id === lote.productoId) || {nombre:'?', diasCosecha: 0, rendimientoPorPlanta: 1};
